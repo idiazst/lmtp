@@ -53,7 +53,6 @@ print.lmtp_ltmle <- function(x, ...) {
     )
   )
 }
-}
 
 #' @export
 print.lmtp_ltmle <- function(x, ...) {
