@@ -66,8 +66,9 @@
 #'  Output of \code{lmtp_control()}.
 #' @param strata \[\code{character}\]\cr
 #'  An optional vector containing the names of one or more stratification variables.
-#'  Estimates, standard errors, and confidence intervals are returned for every observed
-#'  combination of these variables. Missing values are treated as a separate stratum.
+#'  Estimates, standard errors, and confidence intervals are returned separately
+#'  for every observed level of each variable. When multiple variables are supplied,
+#'  they are not crossed. Missing values are treated as an explicit level.
 #'  For a causal subgroup interpretation, these variables should be measured before treatment.
 #'
 #' @details
@@ -90,25 +91,27 @@
 #' can be interpreted as the total effect of treatment operating through pathways that include the competing events.
 #' For more information on this interpretation see DOI: 10.1002/sim.8471.
 #'
-#' ## Stratified estimates
-#' For a stratum \eqn{s}, the point estimate is calculated by applying the same weighted mean
-#' used for the population TMLE to the first targeted outcome-regression prediction among
-#' observations in that stratum. Let \eqn{D_i} denote the uncentered influence function on the
-#' outcome scale and let \eqn{\widehat p_s} be the weighted empirical stratum probability.
+#' ## Marginal estimates by stratification variables
+#' For each supplied variable \(V_j\) and each observed level \(v\), the point estimate
+#' is calculated by applying the same weighted mean used for the population TMLE to the
+#' first targeted outcome-regression prediction among observations with \(V_j = v\).
+#' The other stratification variables are marginalized over rather than crossed with \(V_j\).
+#' Let \(D_i\) denote the uncentered influence-function contribution on the outcome scale
+#' and let \(\widehat p_{j,v}\) be the weighted empirical probability of \(V_j = v\).
 #' The influence function used for inference is
-#' \deqn{\frac{I(S_i=s)}{\widehat p_s}\{D_i-\widehat\psi_s\}.}
-#' The resulting \code{ife} object uses the variance of this influence function, including the
-#' package's existing survey-weight and cluster-robust calculations, to form standard errors
-#' and confidence intervals.
+#' \deqn{\frac{I(V_{ji}=v)}{\widehat p_{j,v}}\{D_i-\widehat\psi_{j,v}\}.}
+#' The resulting \code{ife} object uses the package's existing survey-weight and
+#' cluster-robust calculations to form standard errors and confidence intervals.
 #'
 #' @return A list of class \code{lmtp} containing the following components:
 #'
 #' \item{estimator}{The estimator used, in this case "TMLE".}
 #' \item{estimate}{The estimated population LMTP effect as an \code{ife} object.}
 #' \item{stratified_estimates}{When \code{strata} is supplied, a named list of \code{ife}
-#'  objects containing the estimate, standard error, and confidence interval for each stratum.}
-#' \item{strata_table}{When \code{strata} is supplied, a data frame identifying the strata
-#'  and reporting their weighted empirical probabilities and sample sizes.}
+#'  objects containing the marginal estimate, standard error, and confidence interval for
+#'  every observed level of each stratification variable.}
+#' \item{strata_table}{When \code{strata} is supplied, a long-format data frame identifying
+#'  each variable and level and reporting its weighted empirical probability and sample size.}
 #' \item{shift}{The shift function specifying the treatment policy of interest.}
 #' \item{outcome_reg}{An n x Tau + 1 matrix of outcome regression predictions.
 #'  The mean of the first column is used for calculating theta.}
