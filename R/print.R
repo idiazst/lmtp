@@ -71,3 +71,21 @@ print.lmtp_ltmle <- function(x, ...) {
     )
   )
 }
+
+#' @export
+print.lmtp_ltmle <- function(x, ...) {
+  cat("\n")
+  cli::cli_text("{.strong LMTP Estimator}: LTMLE")
+  cli::cli_h2("{.emph Treatment specific means}")
+  print(format(as.data.frame(tidy.lmtp_ltmle(x)), digits = 3))
+  cat("\n")
+  cli::cli_bullets(
+    c(
+      ">" = "Inspect {.strong propensity scores} with {.code <object>$propensity_scores}",
+      ">" = "Inspect {.strong covariate balance} with {.code <object>$balance}",
+      ">" = "Inspect {.strong propensity score Super Learners} with {.code <object>$fits_treatment}",
+      ">" = "Inspect {.strong outcome regression Super Learners} with {.code <object>$fits_outcome}", 
+      ">" = "Inspect {.strong censoring Super Learners} with {.code <object>$fits_censoring}"
+    )
+  )
+}
