@@ -21,22 +21,46 @@ generics::tidy
 #' @export
 tidy.lmtp <- function(x, ...) {
   population <- ife::tidy(x$estimate)
+
   if (is.null(x$stratified_estimates)) {
     return(population)
   }
 
   population$stratum <- "Population"
+  population$variable <- NA_character_
+  population$level <- NA_character_
   population$probability <- 1
-  population$n <- sum(x$strata_table[["..lmtp_n.."]])
+  population$n <- if (!is.null(x$n)) {
+    x$n
+  } else {
+    first_variable <- x$strata_table$variable[1]
+    sum(x$strata_table$n[x$strata_table$variable == first_variable])
+  }
 
-  stratified <- do.call("rbind", lapply(x$stratified_estimates, ife::tidy))
-  stratified$stratum <- names(x$stratified_estimates)
-  stratified$probability <- x$strata_table[["..lmtp_probability.."]]
-  stratified$n <- x$strata_table[["..lmtp_n.."]]
+  stratified <- do.call(
+    "rbind",
+    lapply(x$stratified_estimates, ife::tidy)
+  )
+  stratified$stratum <- x$strata_table$label
+  stratified$variable <- x$strata_table$variable
+  stratified$level <- x$strata_table$level
+  stratified$probability <- x$strata_table$probability
+  stratified$n <- x$strata_table$n
 
   out <- rbind(population, stratified)
   rownames(out) <- NULL
-  out[, c("stratum", "probability", "n", "estimate", "std.error", "conf.low", "conf.high")]
+
+  out[, c(
+    "stratum",
+    "variable",
+    "level",
+    "probability",
+    "n",
+    "estimate",
+    "std.error",
+    "conf.low",
+    "conf.high"
+  )]
 }
 
 #' Tidy a(n) lmtp_survival object
