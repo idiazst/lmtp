@@ -1,4 +1,4 @@
-theta_lmtp <- function(task, estimates, density_ratios, shift, is_sdr) {
+theta_lmtp <- function(task, estimates, density_ratios, shift, is_sdr, strata = NULL) {
   if (is_sdr) {
     theta <- fmean(estimates$uncentered_eif, w = task$weights)
   } else {
@@ -7,10 +7,13 @@ theta_lmtp <- function(task, estimates, density_ratios, shift, is_sdr) {
 
   influence_function <- task$rescale(estimates$uncentered_eif)
   theta <- task$rescale(theta)
+  stratified <- stratified_lmtp_estimates(task, estimates, strata, is_sdr)
 
   out <- list(
     estimator = ifelse(is_sdr, "SDR", "TMLE"),
     estimate = ife(theta, influence_function, task$weights, as.character(task$id)),
+    stratified_estimates = stratified$estimates,
+    strata_table = stratified$table,
     shift = shift,
     outcome_reg = task$rescale(estimates$predictions),
     density_ratios = density_ratios$density_ratios,
@@ -21,6 +24,96 @@ theta_lmtp <- function(task, estimates, density_ratios, shift, is_sdr) {
 
   class(out) <- "lmtp"
   out
+}
+
+stratified_lmtp_estimates <- function(task, estimates, strata, is_sdr) {
+  if (is.null(strata)) {
+    return(list(estimates = NULL, table = NULL))
+  }
+
+  strata <- as.data.frame(strata)
+  if (nrow(strata) != length(task$weights)) {
+    stop("`strata` must have one row per observation.", call. = FALSE)
+  }
+  if (any(vapply(strata, is.list, logical(1)))) {
+    stop("Stratification variables must be atomic vectors.", call. = FALSE)
+  }
+
+  # Convert each variable to a factor with an explicit level for missing values.
+  # interaction() then creates an integer group identifier without relying on
+  # potentially ambiguous pasted character labels.
+  grouping_factors <- lapply(strata, function(x) {
+    x <- as.character(x)
+    missing <- is.na(x)
+    missing_level <- "..lmtp_missing.."
+    while (missing_level %in% x[!missing]) {
+      missing_level <- paste0(missing_level, ".")
+    }
+    x[missing] <- missing_level
+    factor(x, levels = unique(x), exclude = NULL)
+  })
+  stratum_id <- do.call(
+    base::interaction,
+    c(grouping_factors, list(drop = TRUE, lex.order = TRUE))
+  )
+  stratum_id <- as.integer(stratum_id)
+  stratum_id <- match(stratum_id, unique(stratum_id))
+  n_strata <- length(unique(stratum_id))
+  first_in_stratum <- match(seq_len(n_strata), stratum_id)
+
+  point_contribution <- if (is_sdr) {
+    estimates$uncentered_eif
+  } else {
+    estimates$predictions[, 1]
+  }
+  point_contribution <- task$rescale(point_contribution)
+  uncentered_eif <- task$rescale(estimates$uncentered_eif)
+
+  stratum_estimates <- vector("list", n_strata)
+  probabilities <- numeric(n_strata)
+  sample_sizes <- integer(n_strata)
+
+  labels <- vapply(first_in_stratum, function(i) {
+    values <- vapply(strata, function(x) {
+      value <- x[i]
+      if (is.na(value)) "<NA>" else as.character(value)
+    }, character(1))
+    paste(paste0(names(strata), "=", values), collapse = ", ")
+  }, character(1))
+  labels <- make.unique(labels, sep = "__")
+
+  for (j in seq_len(n_strata)) {
+    in_stratum <- stratum_id == j
+    probability <- fmean(as.numeric(in_stratum), w = task$weights)
+    if (!is.finite(probability) || probability <= 0) {
+      stop("Every stratum must have positive total weight.", call. = FALSE)
+    }
+    theta <- fmean(
+      point_contribution[in_stratum],
+      w = task$weights[in_stratum]
+    )
+
+    # The conditional-mean EIF must be centered at the stratum-specific
+    # estimate before multiplication by I(S=s) / P(S=s).
+    stratum_eif <- as.numeric(in_stratum) / probability * (uncentered_eif - theta)
+
+    stratum_estimates[[j]] <- ife(
+      theta,
+      stratum_eif,
+      task$weights,
+      as.character(task$id)
+    )
+    probabilities[j] <- probability
+    sample_sizes[j] <- sum(in_stratum)
+  }
+  names(stratum_estimates) <- labels
+
+  strata_table <- strata[first_in_stratum, , drop = FALSE]
+  rownames(strata_table) <- labels
+  strata_table[["..lmtp_probability.."]] <- probabilities
+  strata_table[["..lmtp_n.."]] <- sample_sizes
+
+  list(estimates = stratum_estimates, table = strata_table)
 }
 
 theta_ltmle <- function(task, estimates, propensity_scores, levels, trt_balance, cens_balance) {

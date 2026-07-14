@@ -64,6 +64,11 @@
 #'  An optional vector containing known survey sampling weights.
 #' @param control \[\code{list()}\]\cr
 #'  Output of \code{lmtp_control()}.
+#' @param strata \[\code{character}\]\cr
+#'  An optional vector containing the names of one or more stratification variables.
+#'  Estimates, standard errors, and confidence intervals are returned for every observed
+#'  combination of these variables. Missing values are treated as a separate stratum.
+#'  For a causal subgroup interpretation, these variables should be measured before treatment.
 #'
 #' @details
 #' ## Should \code{mtp = TRUE}?
@@ -85,10 +90,25 @@
 #' can be interpreted as the total effect of treatment operating through pathways that include the competing events.
 #' For more information on this interpretation see DOI: 10.1002/sim.8471.
 #'
+#' ## Stratified estimates
+#' For a stratum \eqn{s}, the point estimate is calculated by applying the same weighted mean
+#' used for the population TMLE to the first targeted outcome-regression prediction among
+#' observations in that stratum. Let \eqn{D_i} denote the uncentered influence function on the
+#' outcome scale and let \eqn{\widehat p_s} be the weighted empirical stratum probability.
+#' The influence function used for inference is
+#' \deqn{\frac{I(S_i=s)}{\widehat p_s}\{D_i-\widehat\psi_s\}.}
+#' The resulting \code{ife} object uses the variance of this influence function, including the
+#' package's existing survey-weight and cluster-robust calculations, to form standard errors
+#' and confidence intervals.
+#'
 #' @return A list of class \code{lmtp} containing the following components:
 #'
 #' \item{estimator}{The estimator used, in this case "TMLE".}
-#' \item{estimates}{The estimated population LMTP effect as an \code{ife} object.}
+#' \item{estimate}{The estimated population LMTP effect as an \code{ife} object.}
+#' \item{stratified_estimates}{When \code{strata} is supplied, a named list of \code{ife}
+#'  objects containing the estimate, standard error, and confidence interval for each stratum.}
+#' \item{strata_table}{When \code{strata} is supplied, a data frame identifying the strata
+#'  and reporting their weighted empirical probabilities and sample sizes.}
 #' \item{shift}{The shift function specifying the treatment policy of interest.}
 #' \item{outcome_reg}{An n x Tau + 1 matrix of outcome regression predictions.
 #'  The mean of the first column is used for calculating theta.}
@@ -109,10 +129,11 @@ lmtp_tmle <- function(data, trt, outcome, baseline = NULL, time_vary = NULL,
                       learners_outcome = "SL.glm",
                       learners_trt = "SL.glm",
                       folds = 10, weights = NULL,
-                      control = lmtp_control()) {
+                      control = lmtp_control(), strata = NULL) {
   assert_not_data_table(data)
   variable_names <- c(unlist(trt), outcome, unlist(time_vary), baseline, cens, compete, id)
-  assert_subset(variable_names, names(data))
+  assert_character(strata, min.len = 1, any.missing = FALSE, unique = TRUE, null.ok = TRUE)
+  assert_subset(c(variable_names, strata), names(data))
   assert_outcome_types(data, outcome, match.arg(outcome_type))
   assert_numeric(bounds, len = 2, unique = TRUE, sorted = TRUE, finite = TRUE, null.ok = TRUE)
 
@@ -148,7 +169,8 @@ lmtp_tmle <- function(data, trt, outcome, baseline = NULL, time_vary = NULL,
     estimates = estimates,
     density_ratios = density_ratios,
     shift = deparse(substitute((shift))),
-    is_sdr = FALSE
+    is_sdr = FALSE,
+    strata = if (is.null(strata)) NULL else data[, strata, drop = FALSE]
   )
 }
 

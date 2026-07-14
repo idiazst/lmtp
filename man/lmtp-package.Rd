@@ -22,6 +22,7 @@ Useful links:
 
 Authors:
 \itemize{
+  \item Nicholas Williams \email{ntwilliams.personal@gmail.com} (\href{https://orcid.org/0000-0002-1378-4831}{ORCID}) [copyright holder]
   \item Iván Díaz \email{Ivan.Diaz@nyulangone.org} (\href{https://orcid.org/0000-0001-9056-2047}{ORCID}) [copyright holder]
 }
 

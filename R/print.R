@@ -5,6 +5,13 @@ print.lmtp <- function(x, ...) {
   cli::cli_text(cat("   "), "{.strong Trt. Policy}: ", cli::col_blue(cli::style_italic("{x$shift}")))
   cli::cli_h2("{.emph Population intervention estimate}")
   print(x$estimate)
+
+  if (!is.null(x$stratified_estimates)) {
+    cli::cli_h2("{.emph Stratified intervention estimates}")
+    stratified <- tidy.lmtp(x)
+    stratified <- stratified[stratified$stratum != "Population", , drop = FALSE]
+    print(format(as.data.frame(stratified), digits = 3), row.names = FALSE)
+  }
 }
 
 #' @export

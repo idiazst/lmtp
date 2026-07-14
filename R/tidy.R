@@ -19,7 +19,25 @@ generics::tidy
 #' }
 #'
 #' @export
-tidy.lmtp <- function(x, ...) ife::tidy(x$estimate)
+tidy.lmtp <- function(x, ...) {
+  population <- ife::tidy(x$estimate)
+  if (is.null(x$stratified_estimates)) {
+    return(population)
+  }
+
+  population$stratum <- "Population"
+  population$probability <- 1
+  population$n <- sum(x$strata_table[["..lmtp_n.."]])
+
+  stratified <- do.call("rbind", lapply(x$stratified_estimates, ife::tidy))
+  stratified$stratum <- names(x$stratified_estimates)
+  stratified$probability <- x$strata_table[["..lmtp_probability.."]]
+  stratified$n <- x$strata_table[["..lmtp_n.."]]
+
+  out <- rbind(population, stratified)
+  rownames(out) <- NULL
+  out[, c("stratum", "probability", "n", "estimate", "std.error", "conf.low", "conf.high")]
+}
 
 #' Tidy a(n) lmtp_survival object
 #'
