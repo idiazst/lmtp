@@ -7,7 +7,7 @@ print.lmtp <- function(x, ...) {
   print(x$estimate)
 
   if (!is.null(x$stratified_estimates)) {
-    cli::cli_h2("{.emph Stratified intervention estimates}")
+    cli::cli_h2("{.emph Marginal intervention estimates by stratification variable}")
     stratified <- tidy.lmtp(x)
     stratified <- stratified[stratified$stratum != "Population", , drop = FALSE]
     print(format(as.data.frame(stratified), digits = 3), row.names = FALSE)
@@ -34,6 +34,25 @@ print.lmtp_survival <- function(x, ...) {
   cli::cli_text(cat("   "), "{.strong Trt. Policy}: ", cli::col_blue(cli::style_italic("{x[[1]]$shift}")))
   cli::cli_h2("{.emph Population intervention estimates}")
   print(format(as.data.frame(tidy.lmtp_survival(x)), digits = 3))
+}
+
+#' @export
+print.lmtp_ltmle <- function(x, ...) {
+  cat("\n")
+  cli::cli_text("{.strong LMTP Estimator}: LTMLE")
+  cli::cli_h2("{.emph Treatment specific means}")
+  print(format(as.data.frame(tidy.lmtp_ltmle(x)), digits = 3))
+  cat("\n")
+  cli::cli_bullets(
+    c(
+      ">" = "Inspect {.strong propensity scores} with {.code <object>$propensity_scores}",
+      ">" = "Inspect {.strong covariate balance} with {.code <object>$balance}",
+      ">" = "Inspect {.strong propensity score Super Learners} with {.code <object>$fits_treatment}",
+      ">" = "Inspect {.strong outcome regression Super Learners} with {.code <object>$fits_outcome}", 
+      ">" = "Inspect {.strong censoring Super Learners} with {.code <object>$fits_censoring}"
+    )
+  )
+}
 }
 
 #' @export
