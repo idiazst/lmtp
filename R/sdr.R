@@ -1,9 +1,11 @@
-cf_sdr <- function(task, ratios, learners, control, pb) {
+cf_sdr <- function(task, ratios, learners, control, pb, learners_trt, mtp) {
   ans <- vector("list", length = length(task$folds))
 
   for (fold in seq_along(task$folds)) {
     ans[[fold]] <- future::future({
-      estimate_sdr(task, fold, ratios, learners, control, pb)
+      training_weights <- curve_training_weights(task, fold, ratios,
+        matrix(1, task$n, task$tau), learners_trt, mtp, control)
+      estimate_sdr(task, fold, ratios, learners, control, pb, training_weights$ratios)
     },
     seed = TRUE)
   }
@@ -15,10 +17,10 @@ cf_sdr <- function(task, ratios, learners, control, pb) {
        fits = lapply(ans, \(x) x[["fits"]]))
 }
 
-estimate_sdr <- function(task, fold, ratios, learners, control, pb) {
+estimate_sdr <- function(task, fold, ratios, learners, control, pb, training_ratios) {
   natural <- get_folded_data(task$natural, task$folds, fold)
   shifted <- get_folded_data(task$shifted, task$folds, fold)
-  ratios <- get_folded_data(ratios, task$folds, fold)$train
+  ratios <- training_ratios
 
   m_natural_train <- matrix(nrow = nrow(natural$train), ncol = task$tau + 1)
   m_shifted_train <- m_natural_train
@@ -44,7 +46,7 @@ estimate_sdr <- function(task, fold, ratios, learners, control, pb) {
                         learners,
                         ifelse(t != task$tau, "continuous", task$outcome_type),
                         "..i..lmtp_id",
-                        control$.learners_outcome_folds,
+                        learner_split(task, fold, natural$train$..i..lmtp_id[i], control$.learners_outcome_folds),
                         control$.discrete,
                         control$.info)
 
@@ -69,7 +71,7 @@ estimate_sdr <- function(task, fold, ratios, learners, control, pb) {
     iv <- ii(cp1v, y1v & d0v)
 
     under_shift_train <- natural$train[i, c("..i..lmtp_id", history)]
-    under_shift_train[, A_t] <- shifted$train[i, A_t]
+    if (length(task$vars$A) > 1L || t == 1L) under_shift_train[, A_t] <- shifted$train[i, A_t]
 
     m_natural_train[i, t] <- predict(fit, natural$train[i, ], NULL)
     m_shifted_train[i, t] <- predict(fit, under_shift_train, NULL)
@@ -80,7 +82,7 @@ estimate_sdr <- function(task, fold, ratios, learners, control, pb) {
     m_shifted_train[which(!d0), t] <- 1
 
     under_shift_valid <- natural$valid[iv, c("..i..lmtp_id", history)]
-    under_shift_valid[, A_t] <- shifted$valid[iv, A_t]
+    if (length(task$vars$A) > 1L || t == 1L) under_shift_valid[, A_t] <- shifted$valid[iv, A_t]
 
     m_natural_valid[iv, t] <- predict(fit, natural$valid[iv, ], NULL)
     m_shifted_valid[iv, t] <- predict(fit, under_shift_valid, NULL)

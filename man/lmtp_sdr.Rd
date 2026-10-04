@@ -15,7 +15,7 @@ lmtp_sdr(
   shift = NULL,
   shifted = NULL,
   k = Inf,
-  mtp = FALSE,
+  mtp = TRUE,
   outcome_type = c("binomial", "continuous", "survival"),
   id = NULL,
   bounds = NULL,
@@ -23,7 +23,8 @@ lmtp_sdr(
   learners_trt = "glm",
   folds = 10,
   weights = NULL,
-  control = lmtp_control()
+  control = lmtp_control(),
+  learner_folds = NULL
 )
 }
 \arguments{
@@ -76,7 +77,7 @@ all time points.}
 
 \item{mtp}{[\code{logical(1)}]\cr
 Is the intervention of interest a modified treatment policy?
-Default is \code{FALSE}. If treatment variables are continuous this should be \code{TRUE}.}
+Default is \code{TRUE}. If treatment variables are continuous this should be \code{TRUE}.}
 
 \item{outcome_type}{[\code{character(1)}]\cr
 Outcome variable type (i.e., continuous, binomial, survival).}
@@ -89,21 +90,28 @@ An optional, ordered vector of the bounds for a continuous outcomes. If \code{NU
 the bounds will be taken as the minimum and maximum of the observed data.
 Should be left as \code{NULL} if the outcome type is binary.}
 
-\item{learners_outcome}{[\code{character}]\cr A vector of \code{mlr3superlearner} algorithms for estimation
+\item{learners_outcome}{[\code{character}]\cr A vector of \code{SuperLearner} algorithms for estimation
 of the outcome regression. Default is \code{"glm"}.}
 
-\item{learners_trt}{[\code{character}]\cr A vector of \code{mlr3superlearner} algorithms for estimation
+\item{learners_trt}{[\code{character}]\cr A vector of \code{SuperLearner} algorithms for estimation
 of the outcome regression. Default is \code{"glm"}.
 \bold{Only include candidate learners capable of binary classification}.}
 
-\item{folds}{[\code{integer(1)}]\cr
-The number of folds to be used for cross-fitting.}
+\item{folds}{The number of outer cross-fitting folds, or a list of folds
+with \code{training_set} and \code{validation_set} wide-row indices. Validation sets
+must partition the data and clusters must stay intact. \code{folds = 1} uses
+the full data for fitting and evaluation; it does not cross-fit.}
 
 \item{weights}{[\code{numeric(nrow(data))}]\cr
 An optional vector containing sampling weights.}
 
 \item{control}{[\code{list()}]\cr
 Output of \code{lmtp_control()}.}
+
+\item{learner_folds}{An optional list with one integer fold-label vector per
+outer fold, in that fold's training-row order. The same labels are used for
+treatment and outcome learner CV. Repeated records from a cluster must have
+the same label. Only labels represented in each fit's eligible rows are used.}
 }
 \value{
 A list of class \code{lmtp} containing the following components:

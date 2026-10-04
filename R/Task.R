@@ -11,11 +11,13 @@ LmtpTask <- R6::R6Class(
     outcome_type = NULL,
     survival = NULL,
     folds = NULL,
+    learner_folds = NULL,
     weights = NULL,
     initialize = function(data, shifted, A, Y, L, W, C, D, k,
-                          id, outcome_type, folds, weights) {
+                          id, outcome_type, folds, weights, bounds = NULL,
+                          learner_folds = NULL) {
       # Identify tau
-      self$tau <- private$tau_is(Y, A)
+      self$tau <- private$tau_is(Y, A, C)
       self$n <- nrow(data)
 
       # Create Vars object
@@ -23,14 +25,20 @@ LmtpTask <- R6::R6Class(
 
       # Additional checks
       assert_numeric(weights, len = nrow(data), finite = TRUE, any.missing = FALSE, null.ok = TRUE)
-      assert_number(folds, lower = 1, upper = nrow(data) - 1)
+      if (!is.list(folds)) checkmate::assert_count(folds, positive = TRUE)
 
       # Set outcome types
       self$outcome_type <- ifelse(outcome_type %in% c("binomial", "survival"), "binomial", "continuous")
       self$survival <- outcome_type == "survival"
 
       # Set outcome bounds
-      private$bounds <- private$y_bounds(data[, self$vars$Y])
+      assert_numeric(bounds, len = 2, unique = TRUE, sorted = TRUE, finite = TRUE, null.ok = TRUE)
+      private$bounds <- if (is.null(bounds)) private$y_bounds(data[, self$vars$Y]) else bounds
+      observed_y <- unlist(data[, self$vars$Y, drop = FALSE])
+      observed_y <- observed_y[!is.na(observed_y)]
+      if (any(observed_y < private$bounds[1] | observed_y > private$bounds[2])) {
+        stop("Observed outcomes must lie inside `bounds`.")
+      }
 
       # Add cluster IDs
       self$id <- private$add_ids(data, id)
@@ -43,6 +51,7 @@ LmtpTask <- R6::R6Class(
 
       # Make folds for cross-fitting
       self$folds <- private$make_folds(folds)
+      self$learner_folds <- validate_learner_folds(learner_folds, self$folds, self$id)
 
       # Add or normalize weights
       self$weights <- private$make_weights(weights)
@@ -82,7 +91,7 @@ LmtpTask <- R6::R6Class(
         return(rep(TRUE, nrow(data)))
       }
 
-      data[[self$vars$D[t]]] == 0
+      data[[self$vars$D[t]]] == 0 & !is.na(data[[self$vars$D[t]]])
     },
 
     at_risk_N = function(data, t) {
@@ -118,9 +127,9 @@ LmtpTask <- R6::R6Class(
   ),
   private = list(
     bounds = NULL,
-    tau_is = function(Y, A) {
+    tau_is = function(Y, A, C) {
       if (!(length(Y) > 1)) {
-        return(length(A))
+        return(max(length(A), length(C)))
       }
       length(Y)
     },
@@ -133,29 +142,28 @@ LmtpTask <- R6::R6Class(
     },
 
     make_folds = function(V) {
-      id <- self$natural$._lmtp_id
+      id <- self$natural$..i..lmtp_id
+      if (is.list(V)) return(validate_folds(V, self$n, id))
 
       if (length(unique(id)) == self$n & self$outcome_type == "binomial") {
-        strata <- self$natural[[final_outcome(self$vars$Y)]]
+        strata <- self$natural[[last(self$vars$Y)]]
         strata[is.na(strata)] <- 2
         folds <- make_folds(self$natural, V = V, strata_ids = strata)
       } else {
         folds <- make_folds(self$natural, cluster_ids = id, V = V)
       }
 
-      if (V > 1) {
-        return(folds)
-      }
-
-      folds[[1]]$training_set <- folds[[1]]$validation_set
-      folds
+      validate_folds(folds, self$n, id)
     },
 
     y_bounds = function(x) {
       if (self$outcome_type == "binomial") {
         return(c(0, 1))
       }
-      c(min(x, na.rm = T), max(x, na.rm = T))
+      bounds <- range(unlist(x), na.rm = TRUE)
+      if (any(!is.finite(bounds))) stop("At least one observed outcome is required.")
+      if (bounds[1] == bounds[2]) bounds <- bounds + c(-0.5, 0.5)
+      bounds
     },
 
     as_lmtp_data = function(x) {

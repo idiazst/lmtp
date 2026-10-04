@@ -43,7 +43,7 @@
 #'  all time points.
 #' @param mtp \[\code{logical(1)}\]\cr
 #'  Is the intervention of interest a modified treatment policy?
-#'  Default is \code{FALSE}. If treatment variables are continuous this should be \code{TRUE}.
+#'  Default is \code{TRUE}. If treatment variables are continuous this should be \code{TRUE}.
 #' @param outcome_type \[\code{character(1)}\]\cr
 #'  Outcome variable type (i.e., continuous, binomial, survival).
 #' @param id \[\code{character(1)}\]\cr
@@ -52,13 +52,19 @@
 #'  An optional, ordered vector of the bounds for a continuous outcomes. If \code{NULL},
 #'  the bounds will be taken as the minimum and maximum of the observed data.
 #'  Should be left as \code{NULL} if the outcome type is binary.
-#' @param learners_outcome \[\code{character}\]\cr A vector of \code{mlr3superlearner} algorithms for estimation
+#' @param learners_outcome \[\code{character}\]\cr A vector of \code{SuperLearner} algorithms for estimation
 #'  of the outcome regression. Default is \code{"glm"}.
-#' @param learners_trt \[\code{character}\]\cr A vector of \code{mlr3superlearner} algorithms for estimation
+#' @param learners_trt \[\code{character}\]\cr A vector of \code{SuperLearner} algorithms for estimation
 #'  of the outcome regression. Default is \code{"glm"}.
 #'  \bold{Only include candidate learners capable of binary classification}.
-#' @param folds \[\code{integer(1)}\]\cr
-#'  The number of folds to be used for cross-fitting.
+#' @param folds The number of outer cross-fitting folds, or a list of folds
+#'  with `training_set` and `validation_set` wide-row indices. Validation sets
+#'  must partition the data and clusters must stay intact. `folds = 1` uses
+#'  the full data for fitting and evaluation; it does not cross-fit.
+#' @param learner_folds An optional list with one integer fold-label vector per
+#'  outer fold, in that fold's training-row order. The same labels are used for
+#'  treatment and outcome learner CV. Repeated records from a cluster must have
+#'  the same label. Only labels represented in each fit's eligible rows are used.
 #' @param weights \[\code{numeric(nrow(data))}\]\cr
 #'  An optional vector containing sampling weights.
 #' @param control \[\code{list()}\]\cr
@@ -91,13 +97,13 @@
 #' @export
 lmtp_tmle <- function(data, trt, outcome, baseline = NULL, time_vary = NULL,
                       cens = NULL, compete = NULL, shift = NULL, shifted = NULL,
-                      k = Inf, mtp = FALSE,
+                      k = Inf, mtp = TRUE,
                       outcome_type = c("binomial", "continuous", "survival"),
                       id = NULL,
                       learners_outcome = "glm",
                       learners_trt = "glm",
                       folds = 10, weights = NULL,
-                      control = lmtp_control()) {
+                      control = lmtp_control(), bounds = NULL, learner_folds = NULL) {
   assert_not_data_table(data)
   av <- c(unlist(trt), outcome, unlist(time_vary), baseline, cens, compete, id)
   assert_subset(av, names(data))
@@ -117,11 +123,13 @@ lmtp_tmle <- function(data, trt, outcome, baseline = NULL, time_vary = NULL,
     D = compete,
     k = k, id = id,
     outcome_type = match.arg(outcome_type),
-    folds = folds, weights = weights
+    folds = folds, weights = weights, bounds = bounds, learner_folds = learner_folds
   )
 
+  prepare_curve_splits(task, control)
+
   # Create progress bar object
-  pb <- progressr::progressor(task$tau*folds*2)
+  pb <- progressr::progressor(task$tau*length(task$folds)*2)
 
   # Estimate density ratios
   ratios <- cf_r(task, learners_trt, mtp, control, pb)
@@ -185,7 +193,7 @@ lmtp_tmle <- function(data, trt, outcome, baseline = NULL, time_vary = NULL,
 #'  all time points.
 #' @param mtp \[\code{logical(1)}\]\cr
 #'  Is the intervention of interest a modified treatment policy?
-#'  Default is \code{FALSE}. If treatment variables are continuous this should be \code{TRUE}.
+#'  Default is \code{TRUE}. If treatment variables are continuous this should be \code{TRUE}.
 #' @param outcome_type \[\code{character(1)}\]\cr
 #'  Outcome variable type (i.e., continuous, binomial, survival).
 #' @param id \[\code{character(1)}\]\cr
@@ -194,13 +202,19 @@ lmtp_tmle <- function(data, trt, outcome, baseline = NULL, time_vary = NULL,
 #'  An optional, ordered vector of the bounds for a continuous outcomes. If \code{NULL},
 #'  the bounds will be taken as the minimum and maximum of the observed data.
 #'  Should be left as \code{NULL} if the outcome type is binary.
-#' @param learners_outcome \[\code{character}\]\cr A vector of \code{mlr3superlearner} algorithms for estimation
+#' @param learners_outcome \[\code{character}\]\cr A vector of \code{SuperLearner} algorithms for estimation
 #'  of the outcome regression. Default is \code{"glm"}.
-#' @param learners_trt \[\code{character}\]\cr A vector of \code{mlr3superlearner} algorithms for estimation
+#' @param learners_trt \[\code{character}\]\cr A vector of \code{SuperLearner} algorithms for estimation
 #'  of the outcome regression. Default is \code{"glm"}.
 #'  \bold{Only include candidate learners capable of binary classification}.
-#' @param folds \[\code{integer(1)}\]\cr
-#'  The number of folds to be used for cross-fitting.
+#' @param folds The number of outer cross-fitting folds, or a list of folds
+#'  with `training_set` and `validation_set` wide-row indices. Validation sets
+#'  must partition the data and clusters must stay intact. `folds = 1` uses
+#'  the full data for fitting and evaluation; it does not cross-fit.
+#' @param learner_folds An optional list with one integer fold-label vector per
+#'  outer fold, in that fold's training-row order. The same labels are used for
+#'  treatment and outcome learner CV. Repeated records from a cluster must have
+#'  the same label. Only labels represented in each fit's eligible rows are used.
 #' @param weights \[\code{numeric(nrow(data))}\]\cr
 #'  An optional vector containing sampling weights.
 #' @param control \[\code{list()}\]\cr
@@ -233,13 +247,13 @@ lmtp_tmle <- function(data, trt, outcome, baseline = NULL, time_vary = NULL,
 #' @export
 lmtp_sdr <- function(data, trt, outcome, baseline = NULL, time_vary = NULL,
                      cens = NULL, compete = NULL, shift = NULL, shifted = NULL,
-                     k = Inf, mtp = FALSE,
+                     k = Inf, mtp = TRUE,
                      outcome_type = c("binomial", "continuous", "survival"),
                      id = NULL, bounds = NULL,
                      learners_outcome = "glm",
                      learners_trt = "glm",
                      folds = 10, weights = NULL,
-                     control = lmtp_control()) {
+                     control = lmtp_control(), learner_folds = NULL) {
 
   assert_not_data_table(data)
   av <- c(unlist(trt), outcome, unlist(time_vary), baseline, cens, compete, id)
@@ -260,14 +274,16 @@ lmtp_sdr <- function(data, trt, outcome, baseline = NULL, time_vary = NULL,
     D = compete,
     k = k, id = id,
     outcome_type = match.arg(outcome_type),
-    folds = folds, weights = weights
+    folds = folds, weights = weights, bounds = bounds, learner_folds = learner_folds
   )
 
+  prepare_curve_splits(task, control)
+
   # Create progress bar object
-  pb <- progressr::progressor(task$tau*folds*2)
+  pb <- progressr::progressor(task$tau*length(task$folds)*2)
 
   ratios <- cf_r(task, learners_trt, mtp, control, pb)
-  estims <- cf_sdr(task, ratios$ratios, learners_outcome, control, pb)
+  estims <- cf_sdr(task, ratios$ratios, learners_outcome, control, pb, learners_trt, mtp)
 
   theta_dr(
     task = task,

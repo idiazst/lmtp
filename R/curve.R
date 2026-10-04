@@ -1,9 +1,14 @@
-cf_curve <- function(task, ratios, sporadic_weights, learners, control, pb) {
+cf_curve <- function(task, ratios, sporadic_weights, learners, control, pb,
+                     estimator = "sdr", learners_trt = learners, mtp = TRUE) {
   ans <- vector("list", length = length(task$folds))
 
   for (fold in seq_along(task$folds)) {
     ans[[fold]] <- future::future({
-      estimate_curve_sdr(task, fold, ratios, sporadic_weights, learners, control, pb)
+      training_weights <- if (estimator == "sdr") {
+        curve_training_weights(task, fold, ratios, sporadic_weights, learners_trt, mtp, control)
+      } else NULL
+      estimate_curve(task, fold, ratios, sporadic_weights, learners, control, pb,
+                     estimator, training_weights)
     },
     seed = TRUE)
   }
@@ -14,14 +19,21 @@ cf_curve <- function(task, ratios, sporadic_weights, learners, control, pb) {
        shifted = lapply(1:task$tau, \(t) recombine(rbind_depth_2(ans, "shifted", t), task$folds)),
        natural = lapply(1:task$tau, \(t) recombine(rbind_depth_2(ans, "natural", t), task$folds)),
        pseudo = lapply(1:task$tau, \(t) recombine(rbind_depth_2(ans, "pseudo_valid", t), task$folds)),
-       fits = lapply(ans, \(x) x[["fits"]]))
+       fits = lapply(ans, \(x) x[["fits"]]),
+       targeting = lapply(ans, \(x) x[["targeting"]]))
 }
 
-estimate_curve_sdr <- function(task, fold, ratios, sporadic_weights, learners, control, pb) {
+estimate_curve <- function(task, fold, ratios, sporadic_weights, learners, control, pb,
+                           estimator, training_weights = NULL) {
   natural <- get_folded_data(task$natural, task$folds, fold)
   shifted <- get_folded_data(task$shifted, task$folds, fold)
   ratios <- get_folded_data(ratios, task$folds, fold)
   sporadic_weights <- get_folded_data(sporadic_weights, task$folds, fold)
+  if (!is.null(training_weights)) {
+    ratios$train <- training_weights$ratios
+    sporadic_weights$train <- training_weights$sporadic
+  }
+  tol <- if (estimator == "tmle") max(control$.bound, .Machine$double.eps) else NULL
 
   # Matrix to store predictions under the intervention for the training data
   mst <- lapply(1:task$tau, \(tau) matrix(nrow = nrow(natural$train), ncol = tau + 1))
@@ -45,11 +57,13 @@ estimate_curve_sdr <- function(task, fold, ratios, sporadic_weights, learners, c
   ust <- natural$train
   As <- grep("^..i..A", names(ust), value = TRUE)
   As <- grep("_lag", As, value = TRUE, invert = TRUE)
-  ust[, As] <- shifted$train[, As]
+  shift_train <- if (length(task$vars$A) == 1L) ust$time == 1L else rep(TRUE, nrow(ust))
+  ust[shift_train, As] <- shifted$train[shift_train, As]
 
   # Under shift valid
   usv <- natural$valid
-  usv[, As] <- shifted$valid[, As]
+  shift_valid <- if (length(task$vars$A) == 1L) usv$time == 1L else rep(TRUE, nrow(usv))
+  usv[shift_valid, As] <- shifted$valid[shift_valid, As]
 
   taus <- order(unique(natural$train$time))
   for (t in seq_along(taus)) {
@@ -87,7 +101,7 @@ estimate_curve_sdr <- function(task, fold, ratios, sporadic_weights, learners, c
     }
 
     # Remove variables with no variation
-    for(var in vars) {
+    for(var in setdiff(vars, c("..i..lmtp_id", "..i..Y_1"))) {
       if(all(duplicated(natural$train[train_subset & time, var])[-1L])) {
         vars <- setdiff(vars, var)
       }
@@ -99,7 +113,7 @@ estimate_curve_sdr <- function(task, fold, ratios, sporadic_weights, learners, c
       learners,
       ifelse(t != 1, "continuous", task$outcome_type),
       "..i..lmtp_id",
-      control$.learners_outcome_folds,
+      learner_split(task, fold, natural$train$..i..lmtp_id[train_subset & time], control$.learners_outcome_folds),
       control$.discrete,
       control$.info
     )
@@ -111,10 +125,10 @@ estimate_curve_sdr <- function(task, fold, ratios, sporadic_weights, learners, c
     }
 
     # Update the matrices storing all predictions
-    mnt <- update_m(mnt, fit, natural$train, t, task$tau, task$survival)
-    mst <- update_m(mst, fit, ust, t, task$tau, task$survival)
-    mnv <- update_m(mnv, fit, natural$valid, t, task$tau, task$survival)
-    msv <- update_m(msv, fit, usv, t, task$tau, task$survival)
+    mnt <- update_m(mnt, fit, natural$train, t, task$tau, task$survival, tol)
+    mst <- update_m(mst, fit, ust, t, task$tau, task$survival, tol)
+    mnv <- update_m(mnv, fit, natural$valid, t, task$tau, task$survival, tol)
+    msv <- update_m(msv, fit, usv, t, task$tau, task$survival, tol)
 
     # Only When t (l in the paper) = 1 do we apply the sporadic weights
     pseudo <- list()
@@ -128,7 +142,12 @@ estimate_curve_sdr <- function(task, fold, ratios, sporadic_weights, learners, c
         influence_functions[, t] <- eif(ratios$valid, sporadic_weights$valid, msv[[s]], mnv[[s]], t = 1, tau = tau)
       } else {
         # Otherwise calculate the DR transformation using training values as the pseudo outcome for the next iteration
-        dr_transformation <- eif(ratios$train, sporadic_weights$train, mst[[s]], mnt[[s]], t = (s - t + 1), tau = tau)
+        dr_transformation <- if (estimator == "sdr") {
+          eif(ratios$train, sporadic_weights$train, mst[[s]], mnt[[s]], t = (s - t + 1), tau = tau)
+        } else {
+          # Initial TMLE nuisance recursion stays entirely within T_j.
+          mst[[s]][, s - t + 1]
+        }
         pseudo[[length(pseudo) + 1]] <- dr_transformation
       }
     }
@@ -146,17 +165,28 @@ estimate_curve_sdr <- function(task, fold, ratios, sporadic_weights, learners, c
     pb()
   }
 
+  targeting <- NULL
+  if (estimator == "tmle") {
+    targeted <- target_curve(task, fold, ratios$valid, sporadic_weights$valid,
+                             mnv, msv, tol)
+    mnv <- targeted$natural
+    msv <- targeted$shifted
+    influence_functions <- targeted$influence_functions
+    targeting <- targeted$targeting
+  }
+
   list(
     influence_functions = influence_functions,
     shifted = msv,
     natural = mnv,
     pseudo_valid = pseudo_valid,
     fits = fits,
+    targeting = targeting,
     lmtp_id = natural$valid$..i..lmtp_id
   )
 }
 
-predict_long <- function(fit, newdata, t, tau, survival) {
+predict_long <- function(fit, newdata, t, tau, survival, tol = NULL) {
   # Create indicators for the subset of rows to use based on time
   time <- as.numeric(newdata$time) <= rev(1:tau)[t]
   # Empty matrix to store predictions
@@ -173,15 +203,19 @@ predict_long <- function(fit, newdata, t, tau, survival) {
     outcome_free <- rep(TRUE, nrow(newdata[time, ]))
     competing_risk_free <- rep(TRUE, nrow(newdata[time, ]))
   }
+  outcome_free[is.na(outcome_free)] <- FALSE
+  competing_risk_free[is.na(competing_risk_free)] <- TRUE
 
-  predictions[is_observed[time], 1] <- predict(fit, newdata[time & is_observed, ], NULL)
+  predict_subset <- is_observed[time] & outcome_free & competing_risk_free
+  rows <- which(time)[predict_subset]
+  if (length(rows)) predictions[predict_subset, 1] <- predict(fit, newdata[rows, , drop = FALSE], tol)
   predictions[!outcome_free, 1] <- 0
   predictions[!competing_risk_free, 1] <- 1
   predictions[, 1]
 }
 
-update_m <- function(m, fit, newdata, t, tau, survival) {
-  pred <- predict_long(fit, newdata, t, tau, survival)
+update_m <- function(m, fit, newdata, t, tau, survival, tol = NULL) {
+  pred <- predict_long(fit, newdata, t, tau, survival, tol)
   time <- as.numeric(newdata$time) >= t
 
   for (l in seq_along(t:tau)) {

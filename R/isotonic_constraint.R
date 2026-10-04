@@ -15,7 +15,7 @@ isotonic_constraint <- function(x, y) {
 
   iso <- BoundedIsoMean(y, w, a, b)
 
-  approxfun(x, iso, method = "constant", rule = 2, ties = mean)
+  stats::approxfun(x, iso, method = "constant", rule = 2, ties = mean)
 }
 
 cf_isotonic <- function(task, ratios, sporadic_weights, curve) {

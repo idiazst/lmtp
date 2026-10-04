@@ -1,3 +1,15 @@
+# lmtp 1.6.0.9001
+
+- Added pooled TMLE via `lmtp_curve(estimator = "tmle")`; SDR remains the default.
+- Added externally supplied outer folds and common, grouped inner learner folds.
+- Confined SDR training pseudo-outcome weights to each outer training set using nested cross-fitting.
+- Backported upstream history-dependent shift, multivariate treatment, cluster fold, explicit bounds, held-out TMLE targeting, and log-scale contrast fixes.
+- Migrated the learner adapter to upstream's SuperLearner backend; `glm`, `mean`, `ranger`, and `cv_glmnet` aliases are accepted.
+- Removed origami; backported upstream's fold generator with singleton-stratum handling.
+- Declared the missing OrdMonReg dependency, updated the ife requirement, and repaired the prediction-bound default.
+- Encoded missing lagged outcomes with observed-history indicators and allowed sporadic measurement of the final curve outcome.
+- Fixed repeated application of point-treatment policies during later regression predictions and retained EIF dimensions in small folds.
+
 # lmtp 1.4.2
 
 ### General

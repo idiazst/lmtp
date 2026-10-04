@@ -55,10 +55,7 @@ last <- function(x) {
 }
 
 extract_sl_weights <- function(fit) {
-  if (inherits(fit, "mlr3superlearner")) {
-    return(cbind(Risk = fit$risk))
-  }
-  fit$coef
+    fit$coef
 }
 
 convert_to_surv <- function(x) {

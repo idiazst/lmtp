@@ -35,7 +35,7 @@ test_that("Incorrect folds", {
 
   expect_error(
     sw(lmtp_tmle(sim_cens, A, "Y", time_vary = L, cens = cens, folds = 0)),
-    "Assertion on 'folds' failed: Element 1 is not >= 1."
+    "Assertion on 'folds' failed: Must be >= 1."
   )
 })
 
@@ -64,13 +64,13 @@ test_that("Time_vary is a list", {
 })
 
 test_that("Variable length mismatch", {
-  A <- c("A1")
-  L <- c("L1", "L2")
-  cens <- c("C1", "C2")
+  A <- c("A1", "A2")
+  L <- list("L1", "L2")
+  cens <- "C1"
 
   expect_error(
     sw(lmtp_tmle(sim_cens, A, "Y", time_vary = L, cens = cens)),
-    "Assertion on 'C' failed: Must have length 1, but has length 2."
+    "Assertion on 'C' failed: Must have length 2, but has length 1."
   )
 })
 

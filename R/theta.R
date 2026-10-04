@@ -12,6 +12,8 @@ theta_dr <- function(task, sequential_regressions, density_ratios, fits_m, fits_
 
   out <- list(
     estimator = ifelse(augmented, "SDR", "TMLE"),
+    folds = task$folds,
+    learner_folds = task$learner_folds,
     estimate = ife::ife(theta, ic, task$weights, as.character(task$id)),
     shift = shift,
     outcome_reg = task$rescale(sequential_regressions$shifted),
@@ -25,13 +27,18 @@ theta_dr <- function(task, sequential_regressions, density_ratios, fits_m, fits_
   out
 }
 
-theta_curve <- function(task, influence_functions, sequential_regressions, density_ratios, sporadic_weights, fits_m, fits_r, fits_sporadic, shift) {
+theta_curve <- function(task, influence_functions, sequential_regressions, density_ratios, sporadic_weights, fits_m, fits_r, fits_sporadic, shift,
+                        estimator = "sdr", targeting = NULL) {
   ics <- as.list(as.data.frame(influence_functions))
 
   thetas <- unlist(lapply(ics, \(x) weighted.mean(x, task$weights)))
+  if (estimator == "tmle") {
+    thetas <- vapply(sequential_regressions, function(x) weighted.mean(x[, 1], task$weights), numeric(1))
+  }
 
   ics <- lapply(ics, \(x) task$rescale(x))
   thetas <- task$rescale(thetas)
+  unprojected <- thetas
 
   if (task$survival) {
     iso_projection <- isotone::gpava(seq_along(thetas), 1 - thetas)
@@ -39,7 +46,11 @@ theta_curve <- function(task, influence_functions, sequential_regressions, densi
   }
 
   out <- list(
-    estimator = "SDR curve",
+    estimator = paste(toupper(estimator), "curve"),
+    folds = task$folds,
+    learner_folds = task$learner_folds,
+    targeting = targeting,
+    unprojected_estimates = unprojected,
     estimates = lapply(
       seq_along(ics),
       \(x) ife::ife(thetas[[x]], ics[[x]], task$weights, as.character(task$id))

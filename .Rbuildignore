@@ -12,3 +12,6 @@
 ^inst/examples$
 ^paper/
 ^CRAN-SUBMISSION$
+^\.library$
+^validation$
+^MODIFICATIONS\.md$

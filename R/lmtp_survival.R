@@ -43,7 +43,7 @@
 #'  all time points.
 #' @param mtp \[\code{logical(1)}\]\cr
 #'  Is the intervention of interest a modified treatment policy?
-#'  Default is \code{FALSE}. If treatment variables are continuous this should be \code{TRUE}.
+#'  Default is \code{TRUE}. If treatment variables are continuous this should be \code{TRUE}.
 #' @param id \[\code{character(1)}\]\cr
 #'  An optional column name containing cluster level identifiers.
 #' @param learners_outcome \[\code{character}\]\cr A vector of \code{SuperLearner} algorithms for estimation
@@ -51,10 +51,16 @@
 #' @param learners_trt \[\code{character}\]\cr A vector of \code{SuperLearner} algorithms for estimation
 #'  of the exposure mechanism. Default is \code{"glm"}, a main effects GLM.
 #'  \bold{Only include candidate learners capable of binary classification}.
-#' @param folds \[\code{integer(1)}\]\cr
-#'  The number of folds to be used for cross-fitting.
+#' @param folds The number of outer cross-fitting folds, or a list of folds
+#'  with `training_set` and `validation_set` wide-row indices. Validation sets
+#'  must partition the data and clusters must stay intact. `folds = 1` uses
+#'  the full data for fitting and evaluation; it does not cross-fit.
 #' @param weights \[\code{numeric(nrow(data))}\]\cr
 #'  An optional vector containing sampling weights.
+#' @param learner_folds An optional list with one integer fold-label vector per
+#'  outer fold, in that fold's training-row order. The same labels are used for
+#'  treatment and outcome learner CV. Repeated records from a cluster must have
+#'  the same label. Only labels represented in each fit's eligible rows are used.
 #' @param control \[\code{list()}\]\cr
 #'  Output of \code{lmtp_control()}.
 #'
@@ -66,12 +72,12 @@ lmtp_survival <- function(data, trt, outcomes, baseline = NULL, time_vary = NULL
                           cens = NULL, compete = NULL,
                           shift = NULL, shifted = NULL,
                           estimator = c("lmtp_tmle", "lmtp_sdr"),
-                          k = Inf, mtp = FALSE, id = NULL,
+                          k = Inf, mtp = TRUE, id = NULL,
                           learners_outcome = "glm",
                           learners_trt = "glm",
                           folds = 10,
                           weights = NULL,
-                          control = lmtp_control()) {
+                          control = lmtp_control(), learner_folds = NULL) {
 
   checkmate::assertCharacter(outcomes, min.len = 2, null.ok = FALSE, unique = TRUE, any.missing = FALSE)
 
@@ -91,6 +97,7 @@ lmtp_survival <- function(data, trt, outcomes, baseline = NULL, time_vary = NULL
     learners_trt = learners_trt,
     folds = folds,
     weights = weights,
+    learner_folds = learner_folds,
     control = control
   )
 

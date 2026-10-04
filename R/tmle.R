@@ -20,8 +20,8 @@ cf_tmle <- function(task, ratios, learners, control, pb) {
 estimate_tmle <- function(task, fold, ratios, learners, control, pb) {
   natural <- get_folded_data(task$natural, task$folds, fold)
   shifted <- get_folded_data(task$shifted, task$folds, fold)
-  ratios <- get_folded_data(ratios, task$folds, fold)$train
-  weights <- task$weights[task$folds[[fold]]$training_set]
+  ratios <- get_folded_data(ratios, task$folds, fold)$valid
+  weights <- task$weights[task$folds[[fold]]$validation_set]
 
   m_natural_train <- matrix(nrow = nrow(natural$train), ncol = task$tau + 1)
   m_shifted_train <- m_natural_train
@@ -45,7 +45,7 @@ estimate_tmle <- function(task, fold, ratios, learners, control, pb) {
                         learners,
                         ifelse(t != task$tau, "continuous", task$outcome_type),
                         "..i..lmtp_id",
-                        control$.learners_outcome_folds,
+                        learner_split(task, fold, natural$train$..i..lmtp_id[i], control$.learners_outcome_folds),
                         control$.discrete,
                         control$.info)
 
@@ -70,19 +70,20 @@ estimate_tmle <- function(task, fold, ratios, learners, control, pb) {
     iv <- ii(cp1v, y1v & d0v)
 
     under_shift_train <- natural$train[ip, c("..i..lmtp_id", history)]
-    under_shift_train[, A_t] <- shifted$train[ip, A_t]
+    if (length(task$vars$A) > 1L || t == 1L) under_shift_train[, A_t] <- shifted$train[ip, A_t]
 
     m_natural_train[ip, t] <- predict(fit, natural$train[ip, ], 1e-05)
     m_shifted_train[ip, t] <- predict(fit, under_shift_train, 1e-05)
 
     under_shift_valid <- natural$valid[iv, c("..i..lmtp_id", history)]
-    under_shift_valid[, A_t] <- shifted$valid[iv, A_t]
+    if (length(task$vars$A) > 1L || t == 1L) under_shift_valid[, A_t] <- shifted$valid[iv, A_t]
 
     m_natural_valid[iv, t] <- predict(fit, natural$valid[iv, ], 1e-05)
     m_shifted_valid[iv, t] <- predict(fit, under_shift_valid, 1e-05)
 
     # fit fluctuation model
-    fit <- fluc(natural$train[i, task$vars$Y], m_natural_train[i, t], ratios[i, t] * weights[i])
+    i_valid <- ii(task$observed(natural$valid, t), y1v & d0v)
+    fit <- fluc(m_shifted_valid[i_valid, t + 1], m_natural_valid[i_valid, t], ratios[i_valid, t] * weights[i_valid])
 
     natural$train[ip, task$vars$Y] <- update(fit, m_shifted_train[ip, t])
 

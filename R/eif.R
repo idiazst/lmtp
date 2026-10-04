@@ -21,7 +21,7 @@ compute_weights <- function(density_ratios, sporadic_weights, t, tau) {
     density_ratios[, tau] <- density_ratios[, tau] * sporadic_weights[, tau]
   }
 
-  out <- t(apply(density_ratios[, t:tau, drop = FALSE], 1, cumprod))
-  if (ncol(out) > ncol(density_ratios)) return(t(out))
+  out <- density_ratios[, t:tau, drop = FALSE]
+  for (j in seq_len(ncol(out))[-1L]) out[, j] <- out[, j - 1L] * out[, j]
   out
 }

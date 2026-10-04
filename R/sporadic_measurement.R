@@ -38,22 +38,7 @@ estimate_sporadic <- function(task, fold, learners, control, pb) {
 
     # Create an indicator for sporadic missingness
     # If there is no time-varying outcome, there can't be sporadic outcome measurement
-    if(task$outcome_type == "survival") {
-      if (is.null(task$vars$N[t]) || t == task$tau) {
-        ..i..R <- rep(0, nrow(natural$train))
-      } else {
-        # Otherwise, sporadic outcome measurement exists if an observation is uncensored, but the outcome is missing
-        ..i..R <- as.numeric(task$observed(natural$train, t) & is.na(natural$train[[task$vars$N[t]]]))
-      }
-    }
-    else {
-      if(t == task$tau) {
-        ..i..R <- rep(0, nrow(natural$train))
-      }
-      else {
-        ..i..R <- as.numeric(is.na(natural$train[[task$vars$Y[t]]]))
-      }
-    }
+    ..i..R <- sporadic_missing(task, natural$train, t)
 
     # Adding sporadic measurement indicator to training data
     natural$train$..i..R <- ..i..R
@@ -62,19 +47,19 @@ estimate_sporadic <- function(task, fold, learners, control, pb) {
     vars <- c("..i..lmtp_id", task$vars$history("A", t), A_t, "..i..R")
 
     # Simple test that there is variation in the sporadic measurement indicator
-    if (var(..i..R) < 0.0001) {
-      fit <- lm(..i..R ~ 1, data = natural$train[i, vars])
+    if (length(unique(..i..R[i])) == 1L) {
+      fit <- stats::lm(..i..R ~ 1, data = natural$train[i, vars])
     } else {
       # Fit model for sporadic missingness using the super learner
       fit <- run_ensemble(natural$train[i, vars], "..i..R",
                           learners, "binomial", "..i..lmtp_id",
-                          control$.learners_trt_folds,
+                          learner_split(task, fold, natural$train$..i..lmtp_id[i], control$.learners_trt_folds),
                           control$.discrete,
                           control$.info)
     }
 
     # Save fit
-    if (class(fit)[1] == "lmtp_ensemble") {
+    if (inherits(fit, "lmtp_ensemble")) {
       if (control$.return_full_fits) {
         fits[[t]] <- fit
       } else {
@@ -87,25 +72,11 @@ estimate_sporadic <- function(task, fold, learners, control, pb) {
 
     # Create an indicator for sporadic measurement in the validation set
     # Using same logic as for training data
-    if(task$outcome_type == "survival") {
-      if (is.null(task$vars$N[t]) || t == task$tau) {
-        ..i..R <- rep(0, nrow(natural$valid))
-      } else {
-        ..i..R <- as.numeric(task$observed(natural$valid, t) & is.na(natural$valid[[task$vars$N[t]]]))
-      }
-    }
-    else {
-      if(t == task$tau) {
-        ..i..R <- rep(0, nrow(natural$valid))
-      }
-      else {
-        ..i..R <- as.numeric(is.na(natural$valid[[task$vars$Y[t]]]))
-      }
-    }
+    ..i..R <- sporadic_missing(task, natural$valid, t)
 
     # Predict on validation set
     pred <- matrix(1, nrow = nrow(natural$valid), ncol = 1)
-    pred[i, ] <- 1 - predict(fit, natural$valid[i, ])
+    pred[i, ] <- pmax(1 - predict(fit, natural$valid[i, ]), 1e-5)
 
     # Create IPW weights
     weights[, t] <- (!..i..R) / pred
@@ -114,4 +85,11 @@ estimate_sporadic <- function(task, fold, learners, control, pb) {
   }
 
   list(weights = weights, fits = fits)
+}
+
+sporadic_missing <- function(task, data, t) {
+  outcomes <- c(task$vars$N, task$vars$Y)
+  if (length(outcomes) == 1L && t < task$tau) return(rep(0, nrow(data)))
+  outcome <- outcomes[min(t, length(outcomes))]
+  as.numeric(task$observed(data, t) & is.na(data[[outcome]]))
 }

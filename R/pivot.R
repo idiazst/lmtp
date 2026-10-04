@@ -30,8 +30,12 @@ pivot <- function(data, vars) {
     longer <- as.data.table(longer)
 
     to_lag <- grep("^(..i..L)|(..i..A)|(..i..Y)", names(longer), value = TRUE)
-    for (l in 1:(k-1)) {
-      if (k > 0) {
+    # A single terminal outcome repeated during pivoting is not observed history.
+    if (length(c(vars$N, vars$Y)) == 1L) {
+      to_lag <- setdiff(to_lag, grep("^..i..Y", names(longer), value = TRUE))
+    }
+    for (l in seq_len(max(0, k - 1))) {
+      if (k > 1) {
         newcols <- paste0(to_lag, "_lag", l)
         longer[, (newcols) := .lag(.SD, l), by = get("..i..wide_id"), .SDcols = to_lag]
       }
@@ -43,6 +47,12 @@ pivot <- function(data, vars) {
     longer$..i..C_1_lag <- rep(1, nrow(longer))
   } else {
     longer$..i..C_1_lag <- ave(longer$..i..C_1, longer$..i..wide_id, FUN = \(x) c(1, x[-length(x)]))
+  }
+
+  lagged_y <- grep("^\\.\\.i\\.\\.Y.*_lag", names(longer), value = TRUE)
+  for (name in lagged_y) {
+    longer[[paste0(name, "_missing")]] <- as.numeric(is.na(longer[[name]]))
+    longer[[name]][is.na(longer[[name]])] <- 0
   }
 
   longer$..i..R <- as.numeric(!((longer$..i..C_1 == 1) & is.na(longer$..i..Y_1)))

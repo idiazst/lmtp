@@ -5,7 +5,7 @@
 \title{Set LMTP Estimation Parameters}
 \usage{
 lmtp_control(
-  .bound = 1e+05,
+  .bound = 1e-05,
   .trim = 0.999,
   .learners_outcome_folds = 10,
   .learners_trt_folds = 10,
@@ -32,16 +32,16 @@ The number of cross-validation folds for \code{learners_outcome}.}
 The number of cross-validation folds for \code{learners_trt}.}
 
 \item{.return_full_fits}{[\code{logical(1)}]\cr
-Return full 'mlr3superlearner' fits? Default is \code{FALSE}, return only 'mlr3superlearner' weights.}
+Return full 'SuperLearner' fits? Default is \code{FALSE}, return only 'SuperLearner' weights.}
+
+\item{.isotonic_constraint}{[\code{logical(1)}]\cr
+Constrain pseudo-outcomes using isotonic regression in curve algorithm}
 
 \item{.discrete}{[\code{logical(1)}]\cr
 Use discrete or ensemble super learner?}
 
 \item{.info}{[\code{logical(1)}]\cr
 Print super learner fitting info to the console?}
-
-\item{.iosotonic_constraint}{[\code{logical(1)}]\cr
-Constrain pseudo-outcomes using isotonic regression in curve algorithm}
 }
 \value{
 A list of parameters controlling the estimation procedure.

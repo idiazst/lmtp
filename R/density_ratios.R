@@ -44,7 +44,7 @@ estimate_r <- function(task, fold, learners, mtp, control, pb) {
 
     fit <- run_ensemble(stacked[i, vars], "..i..lmtp_stack_indicator",
                         learners, "binomial", "..i..lmtp_id",
-                        control$.learners_trt_folds,
+                        learner_split(task, fold, stacked$..i..lmtp_id[i], control$.learners_trt_folds),
                         control$.discrete,
                         control$.info)
 
@@ -61,11 +61,11 @@ estimate_r <- function(task, fold, learners, mtp, control, pb) {
 
     obs <- task$observed(natural$valid, t)
 
-    if(task$outcome_type == "survival") {
+    if (isTRUE(task$survival)) {
       at_risk <- task$R(natural$valid, t)
     }
     else {
-      at_risk <- rep(1, )
+      at_risk <- rep(1, nrow(natural$valid))
     }
 
     followed <- followed_rule(natural$valid, shifted$valid, A_t, mtp)
