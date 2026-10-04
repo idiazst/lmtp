@@ -16,7 +16,9 @@ make_folds <- function(data, V = 10, strata_ids = NULL, cluster_ids = NULL) {
   } else {
     cluster_chr <- as.character(cluster_ids)
     unique_clusters <- unique(cluster_chr)
-    unit_to_rows <- lapply(unique_clusters, function(cl) which(cluster_chr == cl))
+    unit_to_rows <- if (length(unique_clusters) == n) as.list(seq_len(n)) else
+      unname(split(seq_len(n), factor(match(cluster_chr, unique_clusters),
+                                     levels = seq_along(unique_clusters))))
 
     if (is.null(strata_ids)) {
       unit_strata <- rep("1", length(unique_clusters))
@@ -24,8 +26,8 @@ make_folds <- function(data, V = 10, strata_ids = NULL, cluster_ids = NULL) {
       strata_chr <- as.character(strata_ids)
       # A cluster spanning multiple strata is assigned to its modal stratum,
       # since clusters cannot be split across folds.
-      unit_strata <- vapply(unique_clusters, function(cl) {
-        s <- strata_chr[cluster_chr == cl]
+      unit_strata <- vapply(unit_to_rows, function(rows) {
+        s <- strata_chr[rows]
         tab <- table(s)
         names(tab)[which.max(tab)]
       }, character(1))

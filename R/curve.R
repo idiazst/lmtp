@@ -1,14 +1,20 @@
 cf_curve <- function(task, ratios, sporadic_weights, learners, control, pb,
-                     estimator = "sdr", learners_trt = learners, mtp = TRUE) {
+                     estimator = "sdr", learners_trt = learners, mtp = TRUE,
+                     bridge_folds = NULL) {
   ans <- vector("list", length = length(task$folds))
 
   for (fold in seq_along(task$folds)) {
     ans[[fold]] <- future::future({
-      training_weights <- if (estimator == "sdr") {
-        curve_training_weights(task, fold, ratios, sporadic_weights, learners_trt, mtp, control)
+      supplied <- if (is.null(bridge_folds)) NULL else bridge_folds[[fold]]
+      training_weights <- if (!is.null(supplied$ratios_training)) {
+        list(ratios = supplied$ratios_training,
+             sporadic = matrix(1, nrow(supplied$ratios_training), task$tau))
+      } else if (estimator == "sdr") {
+        curve_training_weights(task, fold, ratios, sporadic_weights, learners_trt, mtp, control,
+                               bridge = !is.null(supplied))
       } else NULL
       estimate_curve(task, fold, ratios, sporadic_weights, learners, control, pb,
-                     estimator, training_weights)
+                     estimator, training_weights, supplied)
     },
     seed = TRUE)
   }
@@ -24,7 +30,7 @@ cf_curve <- function(task, ratios, sporadic_weights, learners, control, pb,
 }
 
 estimate_curve <- function(task, fold, ratios, sporadic_weights, learners, control, pb,
-                           estimator, training_weights = NULL) {
+                           estimator, training_weights = NULL, supplied = NULL) {
   natural <- get_folded_data(task$natural, task$folds, fold)
   shifted <- get_folded_data(task$shifted, task$folds, fold)
   ratios <- get_folded_data(ratios, task$folds, fold)
@@ -51,6 +57,14 @@ estimate_curve <- function(task, fold, ratios, sporadic_weights, learners, contr
   # Pivot into long format
   natural <- lapply(natural, \(x) pivot(x, task$vars))
   shifted <- lapply(shifted, \(x) pivot(x, task$vars))
+
+  if (!is.null(supplied)) {
+    # Replace terminal responses only AFTER pivot creates recorded-history
+    # covariates. A bridge pseudo-outcome is never an observed lagged outcome.
+    natural$train$..i..Y_1 <- as.vector(task$scale(supplied$terminal_training))
+    natural$valid$..i..Y_1 <- as.vector(task$scale(supplied$terminal_validation))
+    natural$train$..i..R <- natural$valid$..i..R <- 1
+  }
 
   # Keep lagged variables as natural values for predictions
   # Under shift training
@@ -107,6 +121,7 @@ estimate_curve <- function(task, fold, ratios, sporadic_weights, learners, contr
       }
     }
 
+    if (is.null(supplied$oracle_regressions)) {
     fit <- run_ensemble(
       natural$train[train_subset & time, vars],
       "..i..Y_1",
@@ -129,6 +144,16 @@ estimate_curve <- function(task, fold, ratios, sporadic_weights, learners, contr
     mst <- update_m(mst, fit, ust, t, task$tau, task$survival, tol)
     mnv <- update_m(mnv, fit, natural$valid, t, task$tau, task$survival, tol)
     msv <- update_m(msv, fit, usv, t, task$tau, task$survival, tol)
+    } else {
+      oracle <- supplied$oracle_regressions
+      for (s in seq_len(task$tau)) {
+        mnt[[s]][, seq_len(s)] <- task$scale(oracle$training$natural[[s]])
+        mst[[s]][, seq_len(s)] <- task$scale(oracle$training$shifted[[s]])
+        mnv[[s]][, seq_len(s)] <- task$scale(oracle$validation$natural[[s]])
+        msv[[s]][, seq_len(s)] <- task$scale(oracle$validation$shifted[[s]])
+      }
+      fits[[t]] <- list(oracle = TRUE)
+    }
 
     # Only When t (l in the paper) = 1 do we apply the sporadic weights
     pseudo <- list()

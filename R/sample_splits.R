@@ -73,7 +73,8 @@ prepare_curve_splits <- function(task, control) {
 
 # Training pseudo-outcomes must not use nuisance fits trained on the outer
 # validation fold. Refit their weights with inner cross-fitting inside T_j.
-curve_training_weights <- function(task, fold, ratios, sporadic_weights, learners, mtp, control) {
+curve_training_weights <- function(task, fold, ratios, sporadic_weights, learners, mtp, control,
+                                    bridge = FALSE) {
   rows <- task$folds[[fold]]$training_set
   if (length(task$folds) == 1L) {
     return(list(ratios = ratios[rows, , drop = FALSE],
@@ -92,5 +93,6 @@ curve_training_weights <- function(task, fold, ratios, sporadic_weights, learner
   })
   inner$learner_folds <- NULL
   list(ratios = cf_r(inner, learners, mtp, control, function(...) NULL)$ratios,
-       sporadic = cf_sporadic(inner, learners, control, function(...) NULL)$weights)
+       sporadic = if (bridge) matrix(1, inner$n, inner$tau) else
+         cf_sporadic(inner, learners, control, function(...) NULL)$weights)
 }

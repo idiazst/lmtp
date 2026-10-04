@@ -1,4 +1,9 @@
-# Pooled SDR and TMLE development branch
+# Pooled SDR, TMLE and observed-history bridge development
+
+The current version is `1.6.0.9002`, on local branch
+`observed-history-simulation`. The `1.6.0.9001` foundation and its earlier
+validation are documented below. The new bridge integration and simulation
+validation are described in the final section.
 
 This modification starts from Herb Susmann's current GitHub `curve` branch,
 commit `f33c53174b29d881916022df178029b30e7275f6` (2025-12-15).
@@ -76,8 +81,9 @@ to their own training data.
 
 Continuous responses use explicit `bounds` when supplied, including the same
 scaling for training and validation. Bridge-transformed responses should be
-treated as continuous and require appropriate bounds. The bridge, adjoint
-estimation, and combined one-step correction are separate integration work.
+treated as continuous and require appropriate bounds. The observed-history
+bridge, adjoint estimation and combined correction are now integrated through
+`lmtp_bridge()`, described below.
 
 ## Upstream fixes carried over
 
@@ -144,3 +150,57 @@ NOT_CRAN=true R_LIBS="$PWD/.library" _R_CHECK_FORCE_SUGGESTS_=false R CMD check 
 The installable source archive is `lmtp_1.6.0.9001.tar.gz`.
 The check log is `validation/lmtp.Rcheck/00check.log`; the built-package test
 summary is `validation/lmtp.Rcheck/tests/testthat.Rout`.
+
+## Observed-history bridge integration (1.6.0.9002)
+
+`lmtp_bridge()` fits the first estimator in the supplied missingness paper.
+Inputs include a joint measured health vector and its measurement indicator
+per horizon. Recorded covariates and outcomes remain separate from transformed
+endpoint responses. Measurement indicators are not treated as censoring.
+Currently the wrapper uses numeric health coding, nonnegative bounded endpoints
+and fixed bounds including zero; it does not implement the full-history
+estimator, survival or sampling-weight extensions.
+
+For each outer split, cmbridge fits an inverse-measurement bridge and an adjoint.
+The sequential component can be pooled SDR or pooled TMLE. Both receive
+fold-specific transformed endpoints; the adjoint term is always added as a
+one-step correction. The variance uses the combined gradient, including its
+cross-component covariance. Missing health is masked before constructing
+history, and a bridge value is never evaluated on an unmeasured endpoint.
+
+SuperLearner and conditional-moment ensembles share the same outer plan and
+inner labels. Bridge training endpoints and adjoint training loadings use
+inner out-of-fold predictions. Loading fits and their tuning remain inside the
+relevant outer training sample. A callback interface permits controlled
+nuisance validation and external fitted bridges. It can supply exact sequential
+regressions for algebra tests, independently of the production fitting path.
+
+The default library contains saturated joint-cell L1 learners. Repeated
+predictor cells are aggregated using weighted means/counts (Gaussian) or
+success/failure counts (binomial), preserving the original ID count for the
+penalty and the original penalized objective. Cell support is learned only
+from training predictors; unseen cells use the training mean. Efficient cluster
+grouping preserves split order and RNG use, and integer-coded policies use a
+vectorized rule comparison while other types retain all.equal comparisons.
+
+Simulation diagnostics found and fixed a lazy-default bug that made the adjoint
+inherit bridge positivity bounds; adjoints are now unbounded by default.
+Training-index cache keys are hashed to avoid R's binding-name length limit.
+Conditional-moment L1 convergence checks and warm starts live in cmbridge.
+Callback runs without supplied training ratios do not apply a second sporadic
+measurement weight after the endpoint has already been bridge transformed.
+
+Validation artifacts and the exact-truth simulation study are in the sibling
+cmbridge-tests repository under results/observed-history. Both source archives
+pass `R CMD check` (manual/vignette builds excluded, unavailable optional
+suggestions not forced). New tests check raw-scale correction, variance,
+unmeasured bridge values, outer-fold exclusion, unbounded adjoints, saturation,
+unseen cells, and equivalence of cell-aggregated likelihood fits.
+
+Final built-package validation with R 4.5.2 (2026-10-04): **306 passed,
+0 failed, 0 warnings, 0 skipped; R CMD check Status: OK**. Use the commands
+above with `lmtp_1.6.0.9002.tar.gz`. Source revisions, archives, checksums,
+check logs and simulation results are recorded in the sibling cmbridge-tests
+repository. Its report retains the generic dose model's finite-sample
+undercoverage and distinguishes pairwise consistency from valid inference
+under persistent misspecification.

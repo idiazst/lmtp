@@ -30,12 +30,18 @@ followed_rule <- function(natural, shifted, A, mtp) {
 
   for (i in seq_along(A)) {
     a <- A[i]
-    followed[, i] <- mapply(function(x, y) isTRUE(all.equal(x, y)),
-                            as.list(natural[, a]),
-                            as.list(shifted[, a]))
+    x <- natural[[a]]; y <- shifted[[a]]
+    ux <- unique(x); uy <- unique(y)
+    if (is.numeric(x) && is.numeric(y) && all(is.finite(ux)) && all(is.finite(uy)) &&
+        all(ux == trunc(ux)) && all(uy == trunc(uy))) {
+      followed[, i] <- x == y
+    } else {
+      followed[, i] <- mapply(function(x, y) isTRUE(all.equal(x, y)),
+                              as.list(x), as.list(y))
+    }
   }
 
-  apply(followed, 1, prod)
+  as.numeric(rowSums(followed) == length(A))
 }
 
 trim <- function(x, trim) {

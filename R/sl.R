@@ -18,11 +18,16 @@ run_ensemble <- function(data, y, learners, outcome_type, id, folds, discrete, i
   mapped <- learners %in% names(aliases)
   learners[mapped] <- unname(aliases[learners[mapped]])
   features <- setdiff(names(data), c(id, y))
+  learner_env <- new.env(parent = environment(SuperLearner::SuperLearner))
+  for (name in c("SL.saturated_l1", "SL.saturated_l1_small", "SL.saturated_l1_large",
+                 "predict.SL.saturated_l1")) {
+    assign(name, get(name, envir = environment(run_ensemble)), envir = learner_env)
+  }
   fit <- SuperLearner::SuperLearner(
     Y = data[[y]], X = data[, features, drop = FALSE],
     family = if (outcome_type == "binomial") binomial() else gaussian(),
     SL.library = learners, id = data[[id]], method = "method.NNLS",
-    env = environment(SuperLearner::SuperLearner), cvControl = cv_control,
+    env = learner_env, cvControl = cv_control,
     verbose = info
   )
   if (discrete) {
