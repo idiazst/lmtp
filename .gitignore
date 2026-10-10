@@ -3,6 +3,13 @@
 .DS_Store
 inst/doc
 .library/
+.library-corrected/
+.library-cv/
 validation/
 *.tar.gz
 *.Rcheck/
+
+.library*/
+validation-artifacts/
+check/
+Rplots.pdf

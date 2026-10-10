@@ -1,206 +1,65 @@
-# Pooled SDR, TMLE and observed-history bridge development
+# Self-censoring branch of lmtp
 
-The current version is `1.6.0.9002`, on local branch
-`observed-history-simulation`. The `1.6.0.9001` foundation and its earlier
-validation are documented below. The new bridge integration and simulation
-validation are described in the final section.
+The package remains **lmtp**, version 1.6.0.9021, on branch `self-censoring`
+in the idiazst/lmtp fork. Generic moment estimators are supplied by cmbridge.
+Simulation code and latest results live in lmtp_selfcensor_sim.
 
-This modification starts from Herb Susmann's current GitHub `curve` branch,
-commit `f33c53174b29d881916022df178029b30e7275f6` (2025-12-15).
-The package version is `1.6.0.9001`; the local branch is
-`pooled-tmle-upstream-fixes`.
+## Foundation
 
-## Use
+This implementation descends from Herb Susmann's pooled `curve` branch,
+commit f33c53174b29d881916022df178029b30e7275f6. Its Git ancestry is retained.
+The previous implementation work ported selected upstream lmtp fixes concerning
+natural treatment histories, multivariate shifts, censoring, bounds, grouped
+folds, outcome dimensions and log-scale relative-risk/odds-ratio inference.
+The repository reorganization does not merge additional upstream changes.
 
-```r
-fit <- lmtp_curve(
-  data, trt, outcome, baseline = baseline, shift = policy,
-  estimator = "tmle", folds = 5
-)
-```
+## Sequential estimators and correction
 
-`estimator = "sdr"` remains the default. The pooled learner backend now follows
-upstream `SuperLearner`, with `SL.*` candidate names. The common Herb aliases
-`glm`, `mean`, `ranger`, and `cv_glmnet` are translated to their SuperLearner
-counterparts. Other mlr3 candidate names require a corresponding SL wrapper.
+`lmtp_curve(estimator = "sdr")` and `lmtp_curve(estimator = "tmle")` use
+SuperLearner and pooled outcome regressions. Logistic TMLE first completes the
+initial regression recursion within the outer training sample, then targets
+separate held-out scores for each endpoint and recursive time. It records the
+fluctuation coefficients and score residuals. SDR retains its recursive update.
 
-## Pooled TMLE
+`lmtp_bridge()` adds observed-history self-censoring bridge/adjoint estimation
+and the one-step correction to either sequential estimator. All three bridge
+candidates use inverse-expit parameterization during estimation. Adjoint
+candidates retain unrestricted identity links. The candidate libraries are sieve
+minimum distance, Landweber and PMMR; saturated L1 remains a SuperLearner
+regression/classification candidate, rather than a conditional-moment candidate.
 
-Both methods use one pooled initial nuisance learner per recursive depth, with
-time as a predictor. For TMLE, the training recursion uses the next shifted
-regression prediction as its response. The entire initial recursion finishes
-inside the outer training set before targeting begins.
+## Shared training samples
 
-For outcome horizon `s`, regressions are targeted backward over `r = s, ..., 1`.
-Each target uses a weighted logistic intercept fluctuation on the outer validation
-fold, with response equal to the next targeted shifted regression (the observed
-outcome at the terminal step), offset equal to the current natural regression,
-and weights equal to the cumulative treatment/censoring ratio times sampling
-weights. The terminal step also includes the sporadic-measurement weight.
+Outer `folds` accepts a count or supplied complementary training/validation sets.
+`learner_folds` supplies person-level labels within each outer training sample.
+Grouped copies in classifier stacks and pooled person-time rows stay together.
+Nested training callbacks retain the shared person assignments for SuperLearner,
+cmbridge ensemble selection, sequential responses and penalty selection.
 
-Separate intercepts for each `(s, r)` solve the score equation for every curve
-point. A single intercept across all outcome horizons would only solve a pooled
-equation. The intercept is solved directly by the same logistic score used by
-upstream TMLE; boundary responses use its limiting values. The TMLE estimate is
-the mean of the targeted first shifted regression. `fit$targeting` records
-coefficients and residual scores.
+`R/bridge_response.R` rebuilds upstream nuisances and backward responses inside
+the training sample needed for each fit, excluding its validation outcomes.
+SDR/TMLE can reuse bridge/treatment fit caches only for matching data, libraries,
+splits and kernel; regression responses remain estimator specific.
 
-The held-out fluctuation equation follows upstream commit `9996b04`. Unlike
-interleaving validation targeting and subsequent initial regressions, the two
-stages here prevent validation responses from entering later nuisance training.
-Training predictions used internally by the initial outcome recursion come from
-fits within the outer training set; reported nuisance predictions are out of
-sample with respect to the outer validation fold.
+## Scoring and penalties
 
-As in Herb's branch, survival estimates receive a monotonicity projection.
-`unprojected_estimates` records the pre-projection estimates to which the TMLE
-score equations apply. The existing SDR isotonic pseudo-outcome calibration is
-retained for SDR and is not applied to TMLE.
+Conditional-cell scoring uses cmbridge's distinct-pair U-statistic. Gaussian and
+linear scores also remove self-products. The raw ensemble Gram is projected to
+positive semidefinite before simplex optimization; penalty losses remain raw.
+Positive sieve/L1 penalty grids are evaluated on training-only CV splits.
+Boundary minima are recorded, grids extend, and unresolved boundaries fail.
+Incomplete/nonfinite trials cannot be selected; candidate failures are retained.
+Treatment predictors remain in the penalty designs.
 
-## Shared splits
+cmbridge fitted functions are not clipped after optimization. The integration's
+approved wider application interval is [-100,100]. Logistic TMLE is unchanged;
+no Gaussian mean update is introduced by this branch.
 
-`folds` accepts either a count or a list of
-`list(training_set = ..., validation_set = ...)` entries using original wide-row
-indices. Training sets must complement validation sets; validation sets must
-partition all rows. A cluster cannot appear on both sides of an outer split.
+## Verification
 
-`learner_folds` accepts one positive-integer label vector per outer fold, in that
-fold's training-row order. All rows for a cluster must have the same label.
-These labels control treatment, sporadic-measurement, and outcome learner CV,
-including repeated copies in density-ratio stacks and pooled person-time rows.
-Each fit restricts the supplied labels to its eligible rows. At least two labels
-must remain. Without supplied labels, a common inner split is generated using the
-larger learner fold count, with a minimum of two.
-
-The fitted object returns the outer and inner plans for reuse. `folds = 1` is
-explicitly an in-sample analysis. SDR training pseudo-outcome weights are refit
-with inner cross-fitting wholly within each outer training set, rather than
-borrowing global out-of-fold fits that may have trained on the outer validation
-fold. SuperLearner CV inside those additional inner nuisance fits is restricted
-to their own training data.
-
-Continuous responses use explicit `bounds` when supplied, including the same
-scaling for training and validation. Bridge-transformed responses should be
-treated as continuous and require appropriate bounds. The observed-history
-bridge, adjoint estimation and combined correction are now integrated through
-`lmtp_bridge()`, described below.
-
-## Upstream fixes carried over
-
-Sources were fetched from current upstream `master`
-(`f04a2b47f46debc515ce4ae778e05ebfde922c44`) and `devel`
-(`0631f120216e875ec41e6a24b6305a1778a66804`).
-
-| Source commit | Fix or update |
-| --- | --- |
-| `49708e9` | History-dependent shifts read natural treatment history. Cherry-picked. |
-| `aac4880` | Multivariate policy-following indicators are calculated by subject. Cherry-picked. |
-| `e68d3a7` | Supplied shifted-data validation flattens multivariate treatment names. |
-| `48ddf8e` | Explicit outcome bounds are passed to and used by the task. |
-| `d56fec0` | Correct internal cluster ID column for outer folds; stratification uses the final outcome in the pooled branch. |
-| `9996b04` | Ordinary TMLE targeting uses validation responses and validation weights. |
-| `7610633` | Local fold generator replaces origami, with additional singleton-stratum and empty-fold safeguards. |
-| `f04a2b4` | Learner CV fold count cannot exceed the number of training clusters. |
-| `e48107b` | Risk-ratio and odds-ratio inference uses the log scale. Cherry-picked. |
-| `6f0127a` | `mtp = TRUE` default. |
-| Upstream `R/sl.R` | SuperLearner adapter, `onlySL = TRUE`, and prediction feature selection. |
-| `0631f12` | Point treatment can have a longer time-varying censoring horizon. |
-
-Additional integration repairs declare the previously missing `OrdMonReg`
-dependency, require `ife >= 0.2.0`, correct the prediction-bound default, encode
-sporadically missing lagged outcomes with missingness indicators, avoid treating
-a repeated terminal outcome as an observed lag, and handle final sporadic
-measurement and absorbed survival states. Cumulative EIF weights retain their
-observation dimension even in small validation folds. A point-treatment policy
-is applied only at its treatment time, rather than being applied repeatedly
-during later curve and fixed-horizon regression predictions.
-
-## Validation
-
-The tests cover known-truth randomized treatment curves, agreement between pooled
-and ordinary TMLE for a single outcome time, every held-out score equation with
-sampling weights, censored survival curves, multivariate treatments, missing
-outcomes, explicit continuous bounds, grouped sample splits, and invariance of a
-fold's initial nuisance fits to changes in its outer validation data. Legacy
-estimator fidelity and argument tests are retained.
-
-The missing isotonic dependency was installed into `.library`, a private project
-library. The existing installed lmtp package was not used as an implementation
-base or replaced. Build and check outputs are in the ignored `validation/`
-directory. Final validation on 2026-10-03 with R 4.5.2:
-
-- Source test suite: passed, with no warnings.
-- Built-package tests: **275 passed, 0 failed, 0 warnings, 0 skipped**.
-- `R CMD check --no-manual --no-build-vignettes`: **Status: OK**, with no errors,
-  warnings, or notes. Manual and vignette builds were excluded.
-- Weighted TMLE residual score tests use a `1e-9` tolerance at every tested
-  outcome horizon and regression time.
-- Seeded known-truth tests cover randomized binary curves (maximum error below
-  `0.035`) and a continuous point-treatment MTP (maximum error below `0.025`
-  across both estimators and all horizons).
-
-Reproduce from the repository root:
-
-```sh
-R_LIBS="$PWD/.library" Rscript -e 'devtools::test(".", reporter="summary", stop_on_failure=TRUE)'
-R_LIBS="$PWD/.library" R CMD build . --no-build-vignettes --no-manual
-NOT_CRAN=true R_LIBS="$PWD/.library" _R_CHECK_FORCE_SUGGESTS_=false R CMD check lmtp_1.6.0.9001.tar.gz --no-manual --no-build-vignettes --output=validation
-```
-
-The installable source archive is `lmtp_1.6.0.9001.tar.gz`.
-The check log is `validation/lmtp.Rcheck/00check.log`; the built-package test
-summary is `validation/lmtp.Rcheck/tests/testthat.Rout`.
-
-## Observed-history bridge integration (1.6.0.9002)
-
-`lmtp_bridge()` fits the first estimator in the supplied missingness paper.
-Inputs include a joint measured health vector and its measurement indicator
-per horizon. Recorded covariates and outcomes remain separate from transformed
-endpoint responses. Measurement indicators are not treated as censoring.
-Currently the wrapper uses numeric health coding, nonnegative bounded endpoints
-and fixed bounds including zero; it does not implement the full-history
-estimator, survival or sampling-weight extensions.
-
-For each outer split, cmbridge fits an inverse-measurement bridge and an adjoint.
-The sequential component can be pooled SDR or pooled TMLE. Both receive
-fold-specific transformed endpoints; the adjoint term is always added as a
-one-step correction. The variance uses the combined gradient, including its
-cross-component covariance. Missing health is masked before constructing
-history, and a bridge value is never evaluated on an unmeasured endpoint.
-
-SuperLearner and conditional-moment ensembles share the same outer plan and
-inner labels. Bridge training endpoints and adjoint training loadings use
-inner out-of-fold predictions. Loading fits and their tuning remain inside the
-relevant outer training sample. A callback interface permits controlled
-nuisance validation and external fitted bridges. It can supply exact sequential
-regressions for algebra tests, independently of the production fitting path.
-
-The default library contains saturated joint-cell L1 learners. Repeated
-predictor cells are aggregated using weighted means/counts (Gaussian) or
-success/failure counts (binomial), preserving the original ID count for the
-penalty and the original penalized objective. Cell support is learned only
-from training predictors; unseen cells use the training mean. Efficient cluster
-grouping preserves split order and RNG use, and integer-coded policies use a
-vectorized rule comparison while other types retain all.equal comparisons.
-
-Simulation diagnostics found and fixed a lazy-default bug that made the adjoint
-inherit bridge positivity bounds; adjoints are now unbounded by default.
-Training-index cache keys are hashed to avoid R's binding-name length limit.
-Conditional-moment L1 convergence checks and warm starts live in cmbridge.
-Callback runs without supplied training ratios do not apply a second sporadic
-measurement weight after the endpoint has already been bridge transformed.
-
-Validation artifacts and the exact-truth simulation study are in the sibling
-cmbridge-tests repository under results/observed-history. Both source archives
-pass `R CMD check` (manual/vignette builds excluded, unavailable optional
-suggestions not forced). New tests check raw-scale correction, variance,
-unmeasured bridge values, outer-fold exclusion, unbounded adjoints, saturation,
-unseen cells, and equivalence of cell-aggregated likelihood fits.
-
-Final built-package validation with R 4.5.2 (2026-10-04): **306 passed,
-0 failed, 0 warnings, 0 skipped; R CMD check Status: OK**. Use the commands
-above with `lmtp_1.6.0.9002.tar.gz`. Source revisions, archives, checksums,
-check logs and simulation results are recorded in the sibling cmbridge-tests
-repository. Its report retains the generic dose model's finite-sample
-undercoverage and distinguishes pairwise consistency from valid inference
-under persistent misspecification.
+The package retains upstream unit tests and adds pooled-TMLE, upstream-fix,
+bridge-curve and sequential-response integration tests. They check score
+reconstruction, validation exclusion, shared person splits, penalty CV and
+inverse-expit bridges/unrestricted adjoints. See SELF-CENSORING.md for commands.
+The latest simulation archives pin this numerical implementation; development
+changes to package documentation do not silently replace those builds.

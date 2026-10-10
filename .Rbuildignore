@@ -13,5 +13,11 @@
 ^paper/
 ^CRAN-SUBMISSION$
 ^\.library$
+^\.library-corrected$
+^\.library-cv$
+^\.library-ensemble$
 ^validation$
 ^MODIFICATIONS\.md$
+^SELF-CENSORING\.md$
+^validation-artifacts$
+^check$

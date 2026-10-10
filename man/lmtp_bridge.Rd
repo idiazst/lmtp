@@ -16,12 +16,11 @@ lmtp_bridge(
   estimator = c("sdr", "tmle"),
   folds = 3,
   learner_folds = NULL,
-  learners_outcome = c("SL.saturated_l1_small", "SL.saturated_l1",
-    "SL.saturated_l1_large"),
+  learners_outcome = c("SL.saturated_l1_cv", "SL.mean"),
   learners_trt = learners_outcome,
   bridge_library = NULL,
   adjoint_library = NULL,
-  bounds = c(0, 6),
+  bounds = c(-100, 100),
   control = lmtp_control(),
   id = NULL,
   mtp = TRUE,
@@ -53,10 +52,16 @@ lmtp_bridge(
 
 \item{learners_outcome, learners_trt}{SuperLearner libraries.}
 
-\item{bridge_library, adjoint_library}{Conditional-moment libraries. The
-default adjoint copies bridge learners with lower and upper bounds removed.}
+\item{bridge_library, adjoint_library}{Conditional-moment libraries. The defaults
+use saturated joint-category sieve_md, Landweber and PMMR. All bridge candidates
+optimize unrestricted inverse-logit coefficients; all default adjoint candidates
+use the identity parameterization. Both libraries exclude saturated_l1. A
+default adjoint derived from a custom bridge library also excludes saturated_l1
+and resets all three links to identity. Both default sieve penalties use
+training-only CV over 41 positive absolute ridge lambdas from 1e-10 to 1.
+Boundary minima extend the grid until interior or raise an error.}
 
-\item{bounds}{Fixed bounds for the transformed outcome, including zero.}
+\item{bounds}{A wider interval including zero for bridge predictions supplied to the longitudinal estimator and for scaling its transformed outcomes. Raw conditional-moment fits are not clipped. All bridge candidates use inverse-expit parameterizations. The logistic TMLE update is retained.}
 
 \item{control}{lmtp controls.}
 

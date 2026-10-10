@@ -40,13 +40,15 @@ estimate_r <- function(task, fold, learners, mtp, control, pb) {
     }
 
     vars <- c("..i..lmtp_id", task$vars$history("A", t), A_t, task$vars$C[t], "..i..lmtp_stack_indicator")
+    if (identical(control$.ratio_history, FALSE))
+      vars <- c("..i..lmtp_id", A_t, task$vars$C[t], "..i..lmtp_stack_indicator")
     stacked <- stack_data(natural$train, shifted$train, task$vars$A, task$vars$C, t)
 
     fit <- run_ensemble(stacked[i, vars], "..i..lmtp_stack_indicator",
                         learners, "binomial", "..i..lmtp_id",
                         learner_split(task, fold, stacked$..i..lmtp_id[i], control$.learners_trt_folds),
                         control$.discrete,
-                        control$.info)
+                        control$.info, penalty_folds = control$.nested_split_function)
 
     if (control$.return_full_fits) {
       fits[[t]] <- fit

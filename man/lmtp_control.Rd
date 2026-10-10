@@ -12,10 +12,12 @@ lmtp_control(
   .return_full_fits = FALSE,
   .isotonic_constraint = TRUE,
   .discrete = TRUE,
-  .info = FALSE
+  .info = FALSE,
+  .ratio_history = TRUE
 )
 }
 \arguments{
+\item{.cm_kernel}{Conditional-moment scoring kernel: cell, Gaussian rbf, or linear. All exclude self-products.}
 \item{.bound}{[\code{numeric(1)}]\cr
 Determines that maximum and minimum values (scaled) predictions
 will be bounded by. The default is 1e-5, bounding predictions by 1e-5 and 0.9999.}
@@ -42,6 +44,9 @@ Use discrete or ensemble super learner?}
 
 \item{.info}{[\code{logical(1)}]\cr
 Print super learner fitting info to the console?}
+
+\item{.ratio_history}{Whether density-ratio learners include history.
+FALSE is intended for deliberate misspecification comparisons.}
 }
 \value{
 A list of parameters controlling the estimation procedure.

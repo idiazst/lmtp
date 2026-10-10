@@ -3,6 +3,21 @@
 
 # lmtp <img src="man/figures/lmtp.png" align="right" height="139"/></a>
 
+## Self-censoring development branch
+
+This is the `self-censoring` branch of [idiazst/lmtp](https://github.com/idiazst/lmtp/tree/self-censoring),
+a fork of [nt-williams/lmtp](https://github.com/nt-williams/lmtp). The package
+name remains **lmtp**. It includes Herb Susmann's pooled-curve implementation,
+the previously ported upstream repairs, pooled SDR and logistic TMLE,
+and the observed-history self-censoring estimator `lmtp_bridge()`.
+
+`lmtp_bridge()` constructs or accepts the outer splits, then passes the same
+training-person splits to SuperLearner, cmbridge and penalty selection. Both
+sequential estimators receive the one-step bridge/adjoint correction.
+The generic conditional-moment learners live in **cmbridge**; study DGPs,
+launchers and results live in [lmtp_selfcensor_sim](https://github.com/idiazst/lmtp_selfcensor_sim).
+See [SELF-CENSORING.md](SELF-CENSORING.md) for the branch's API and tests.
+
 <!-- badges: start -->
 
 [![CRAN

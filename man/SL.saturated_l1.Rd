@@ -4,6 +4,7 @@
 \alias{SL.saturated_l1}
 \alias{SL.saturated_l1_small}
 \alias{SL.saturated_l1_large}
+\alias{SL.saturated_l1_cv}
 \title{Saturated L1 SuperLearner wrapper}
 \usage{
 SL.saturated_l1(Y, X, newX, family, obsWeights, id, penalty_scale = 0.01, ...)
@@ -11,6 +12,19 @@ SL.saturated_l1(Y, X, newX, family, obsWeights, id, penalty_scale = 0.01, ...)
 SL.saturated_l1_small(...)
 
 SL.saturated_l1_large(...)
+
+SL.saturated_l1_cv(
+  Y,
+  X,
+  newX,
+  family,
+  obsWeights,
+  id,
+  penalty_scales = 10^seq(-5, 0, by = 0.25),
+  penalty_folds = NULL,
+  penalty_max_extensions = 16L,
+  ...
+)
 }
 \arguments{
 \item{Y, X, newX, family, obsWeights, id}{Standard SuperLearner wrapper inputs.}
@@ -18,10 +32,18 @@ SL.saturated_l1_large(...)
 \item{penalty_scale}{Penalty multiplied by the inverse square root of IDs.}
 
 \item{...}{Additional SuperLearner arguments.}
+
+\item{penalty_scales}{Positive initial scales selected within training data. Boundary minima extend the grid until an interior minimum is found.}
+
+\item{penalty_max_extensions}{Maximum grid extensions before an unresolved boundary raises a structured failure.}
+
+\item{penalty_folds}{Optional function returning shared training-only fold labels from IDs.}
 }
 \value{
 Standard SuperLearner prediction and fit list.
 }
 \description{
 Saturated L1 SuperLearner wrapper
+
+Saturated L1 learner with training-only penalty selection
 }

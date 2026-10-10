@@ -30,6 +30,32 @@ test_that("saturated learner includes joint interactions and unseen-cell fallbac
   expect_equal(predict(f$fit,data.frame(x=2,z=2)),mean(y))
 })
 
+test_that("fast saturated keys preserve factor and numeric coding", {
+  x <- data.frame(a = rep(c(0, 1 / 6, 1, NA_real_), 100), b = factor(rep(c("off", "on"), 200)))
+  expect_identical(.saturated_keys(x), do.call(paste, c(x, sep = "|")))
+})
+
+test_that("penalty selection excludes newX and keeps repeated person IDs together", {
+  set.seed(440)
+  id <- rep(seq_len(200), 2)
+  X <- data.frame(x = rep(rbinom(200, 1, .5), 2), z = rep(0:1, each = 200))
+  y <- rbinom(400, 1, plogis(-1 + 2 * X$x))
+  one <- SL.saturated_l1_cv(y, X, X, binomial(), rep(1, 400), id)
+  two <- SL.saturated_l1_cv(y, X, data.frame(x = 2, z = 2), binomial(), rep(1, 400), id)
+  expect_equal(one$fit$penalty_cv, two$fit$penalty_cv)
+  expect_equal(sum(one$fit$penalty_cv$selected), 1L)
+  expect_gt(one$fit$penalty, 0)
+  even <- id %% 2 == 0
+  expect_silent(SL.saturated_l1_cv(y[even], X[even, ], X, binomial(),
+                                 rep(1, sum(even)), id[even]))
+  expect_error(SL.saturated_l1_cv(y, X, X, binomial(), rep(1, 400), id,
+                                 penalty_scales = 0), "positive")
+  # Calendar-time constants preserve the separate endpoint regressions.
+  mean_fit <- SL.time_mean(c(1, 3, 10, 20), data.frame(time = c(1, 1, 2, 2)),
+    data.frame(time = c(1, 2)), gaussian(), rep(1, 4), 1:4)
+  expect_equal(mean_fit$pred, c(2, 15))
+})
+
 test_that("cell aggregation preserves the Gaussian and binomial penalized objectives", {
   set.seed(568)
   n <- 800
@@ -58,14 +84,42 @@ test_that("outer validation outcomes cannot alter its fitted bridge nuisances", 
     shift=static_binary_on,mtp=FALSE,folds=folds,
     control=lmtp_control(.learners_trt_folds=2,.learners_outcome_folds=2))
   set.seed(456); one <- do.call(lmtp_bridge,c(list(data=dat),args))
-  for(fold in one$bridge_fits) for(candidate in fold$adjoint_fits[[1]]$candidates) {
-    expect_equal(candidate$tuning$lower,-Inf)
-    expect_equal(candidate$tuning$upper,Inf)
+  for(fold in one$bridge_fits) for(model in c(fold$beta_fits, fold$adjoint_fits)) {
+    expect_setequal(names(model$weights), c("sieve_md", "landweber", "pmmr"))
+    expect_identical(model$candidates$sieve_md$target_spec$type, "cell")
+    for(candidate in model$candidates) {
+    expect_false(identical(candidate$method, "saturated_l1"))
+    expect_true(is.null(candidate$tuning$lower) || identical(candidate$tuning$lower, -Inf))
+    expect_true(is.null(candidate$tuning$upper) || identical(candidate$tuning$upper, Inf))
+    }
+  }
+  for (fold in one$bridge_fits) {
+    for (model in c(fold$beta_fits, fold$adjoint_fits)) {
+      sieve <- model$candidates$sieve_md
+      selected <- which(sieve$penalty_cv$selected)
+      expect_length(selected, 1L)
+      expect_true(selected > 1 && selected < nrow(sieve$penalty_cv))
+      expect_equal(sieve$tuning$lambda, sieve$penalty_cv$scale[selected])
+      expect_gt(sieve$tuning$lambda, 0)
+      expect_equal(sieve$penalty_fold_id, fold$nested_split_function(sieve$penalty_ids))
+    }
+    for (model in fold$beta_fits) {
+      for (candidate in model$candidates) {
+        expect_identical(candidate$tuning$link, "inverse_logit")
+        expect_true(all(fitted(candidate)[!is.na(fitted(candidate))] >= 1))
+        expect_true(all(is.finite(candidate$link_coefficients)))
+      }
+      expect_true(all(fitted(model)[!is.na(fitted(model))] >= 1))
+    }
+    for (model in fold$adjoint_fits) for (candidate in model$candidates)
+      expect_identical(candidate$tuning$link, "identity")
   }
   v <- folds[[1]]$validation_set
   dat$Y[v] <- ifelse(dat$R[v]==1,1-dat$Y[v],NA_real_)
   set.seed(456); two <- do.call(lmtp_bridge,c(list(data=dat),args))
   expect_equal(one$bridge_fits[[1]]$beta_fits[[1]]$weights,two$bridge_fits[[1]]$beta_fits[[1]]$weights)
+  expect_equal(one$bridge_fits[[1]]$beta_fits[[1]]$candidates$sieve_md$penalty_cv,
+               two$bridge_fits[[1]]$beta_fits[[1]]$candidates$sieve_md$penalty_cv)
   for(k in seq_along(one$bridge_fits[[1]]$beta_fits[[1]]$candidates)) {
     expect_equal(one$bridge_fits[[1]]$beta_fits[[1]]$candidates[[k]]$coefficients,
                  two$bridge_fits[[1]]$beta_fits[[1]]$candidates[[k]]$coefficients)

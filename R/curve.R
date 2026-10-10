@@ -115,7 +115,7 @@ estimate_curve <- function(task, fold, ratios, sporadic_weights, learners, contr
     }
 
     # Remove variables with no variation
-    for(var in setdiff(vars, c("..i..lmtp_id", "..i..Y_1"))) {
+    for(var in setdiff(vars, c("..i..lmtp_id", "..i..Y_1", grep("^..i..A", vars, value = TRUE)))) {
       if(all(duplicated(natural$train[train_subset & time, var])[-1L])) {
         vars <- setdiff(vars, var)
       }
@@ -130,7 +130,12 @@ estimate_curve <- function(task, fold, ratios, sporadic_weights, learners, contr
       "..i..lmtp_id",
       learner_split(task, fold, natural$train$..i..lmtp_id[train_subset & time], control$.learners_outcome_folds),
       control$.discrete,
-      control$.info
+      control$.info,
+      if (is.null(supplied$response_engine)) NULL else local({
+        depth <- t; engine <- supplied$response_engine
+        function(ids, times, valid_ids, valid_times) engine$response(ids, times, valid_ids, valid_times, depth)
+      }),
+      if (is.null(supplied$response_engine)) NULL else supplied$response_engine$splits
     )
 
     if (control$.return_full_fits) {
