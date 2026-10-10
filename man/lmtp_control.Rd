@@ -13,7 +13,8 @@ lmtp_control(
   .isotonic_constraint = TRUE,
   .discrete = TRUE,
   .info = FALSE,
-  .ratio_history = TRUE
+  .ratio_history = TRUE,
+  .cm_kernel = "cell"
 )
 }
 \arguments{
