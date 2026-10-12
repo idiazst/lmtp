@@ -34,7 +34,12 @@ test_that("sequential-response sieve CV matches cmbridge and excludes outer vali
   reference <- cmbridge::fit_bridge_ensemble(B, V, data$R[rows], lib,
     fold_id = before$engine$splits(task$id[rows]), kernel = "cell")$candidates$sieve
   expect_identical(model$method, "sieve_md")
-  expect_equal(model$penalty_cv, reference$penalty_cv, tolerance = 1e-12)
+  # The single-candidate shortcut is always U; cmbridge also records the
+  # statistic column introduced with its opt-in V interface. Compare every
+  # tuning value while explicitly verifying this extra reference metadata.
+  expect_true(all(reference$penalty_cv$statistic == "u"))
+  reference_cv <- reference$penalty_cv[, setdiff(names(reference$penalty_cv), "statistic"), drop = FALSE]
+  expect_equal(model$penalty_cv, reference_cv, tolerance = 1e-12)
   expect_equal(model$tuning$lambda, reference$tuning$lambda)
   expect_equal(model$penalty_fold_id, before$engine$splits(model$penalty_ids))
   expect_identical(model$penalty_ids, task$id[rows])

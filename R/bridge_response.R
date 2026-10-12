@@ -64,7 +64,8 @@ bridge_response_engine <- function(original, encoded, task, fold, measurement, h
     candidate
   })
   signature <- digest::digest(list(task$id[rows], encoded[rows, , drop = FALSE],
-    clean_library, learners_trt, control$.cm_kernel, control$.discrete, control$.ratio_history))
+    clean_library, learners_trt, control$.cm_kernel, control$.cm_project_psd,
+    control$.discrete, control$.ratio_history))
   if (!identical(common$signature, signature) || !identical(common$splits, split_function)) {
     common$beta <- common$ratio <- NULL
     common$signature <- signature; common$splits <- split_function
@@ -157,7 +158,8 @@ bridge_response_engine <- function(original, encoded, task, fold, measurement, h
           model$penalty_ids <- task$id[train]
           model$penalty_fold_id <- labels
         } else model <- cmbridge::fit_bridge_ensemble(z$B[train, , drop = FALSE], z$V[train, , drop = FALSE],
-          z$M[train], lib, fold_id = split_function(task$id[train]), kernel = control$.cm_kernel)
+          z$M[train], lib, fold_id = split_function(task$id[train]), kernel = control$.cm_kernel,
+          project_psd = !identical(control$.cm_project_psd, FALSE))
       }
       assign(key, list(model = model, horizon = s, training_ids = task$id[train]), beta_cache)
     }

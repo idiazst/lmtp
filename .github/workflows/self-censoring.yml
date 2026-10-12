@@ -1,7 +1,7 @@
 name: Self-censoring package checks
 on:
   push:
-    branches: [self-censoring]
+    branches: [self-censoring, ensemble-psd-comparison]
   pull_request:
     branches: [self-censoring]
   workflow_dispatch:
@@ -23,7 +23,7 @@ jobs:
         with:
           extra-packages: |
             any::rcmdcheck
-            github::idiazst/cmbridge
+            github::idiazst/cmbridge@ed8e267855e12d9f32266c865e6b8707be550db0
           needs: check
       - name: Check lmtp package and integration tests
         shell: Rscript {0}

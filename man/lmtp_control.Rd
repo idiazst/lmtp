@@ -14,10 +14,12 @@ lmtp_control(
   .discrete = TRUE,
   .info = FALSE,
   .ratio_history = TRUE,
-  .cm_kernel = "cell"
+  .cm_kernel = "cell",
+  .cm_project_psd = TRUE
 )
 }
 \arguments{
+\item{.cm_project_psd}{Whether to project U-statistic ensemble Grams to PSD. TRUE preserves the original behavior. FALSE changes ensemble weight selection only; at most 10 active candidates are supported.}
 \item{.cm_kernel}{Conditional-moment scoring kernel: cell, Gaussian rbf, or linear. All exclude self-products.}
 \item{.bound}{[\code{numeric(1)}]\cr
 Determines that maximum and minimum values (scaled) predictions

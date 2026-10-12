@@ -24,6 +24,9 @@
 #'
 #' @param .cm_kernel Kernel for conditional-moment ensemble and penalty CV:
 #'   cell (default), Gaussian rbf, or linear. All use distinct-pair U-statistics.
+#' @param .cm_project_psd Whether to project U-statistic ensemble Grams to PSD.
+#'   Defaults to TRUE. FALSE changes only the ensemble weight criterion and
+#'   uses global simplex-face enumeration for at most 10 active candidates.
 #' @return A list of parameters controlling the estimation procedure.
 #' @export
 #'
@@ -38,7 +41,8 @@ lmtp_control <- function(.bound = 1e-5,
                          .discrete = TRUE,
                          .info = FALSE,
                          .ratio_history = TRUE,
-                         .cm_kernel = "cell") {
+                         .cm_kernel = "cell",
+                         .cm_project_psd = TRUE) {
 
   assert_number(.learners_outcome_folds, null.ok = TRUE)
   assert_number(.learners_trt_folds, null.ok = TRUE)
@@ -50,6 +54,7 @@ lmtp_control <- function(.bound = 1e-5,
   assert_logical(.info, len = 1)
   assert_logical(.ratio_history, len = 1)
   .cm_kernel <- match.arg(.cm_kernel, c("cell", "rbf", "linear"))
+  assert_logical(.cm_project_psd, len = 1, any.missing = FALSE)
 
   list(.bound = .bound,
        .trim = .trim,
@@ -60,5 +65,6 @@ lmtp_control <- function(.bound = 1e-5,
        .discrete = .discrete,
        .info = .info,
        .ratio_history = .ratio_history,
-       .cm_kernel = .cm_kernel)
+       .cm_kernel = .cm_kernel,
+       .cm_project_psd = .cm_project_psd)
 }

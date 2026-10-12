@@ -261,7 +261,8 @@ bridge_nuisance_fit <- function(original, encoded, task, fold, measurement, heal
     }
     beta <- cmbridge::fit_bridge_ensemble(B[seq_len(ntrain), , drop = FALSE], V[seq_len(ntrain), , drop = FALSE],
                                           M[seq_len(ntrain)], library = bridge_library,
-                                          fold_id = labels, kernel = control$.cm_kernel)
+                                          fold_id = labels, kernel = control$.cm_kernel,
+                                          project_psd = !identical(control$.cm_project_psd, FALSE))
     beta_fits[[s]] <- beta
     observed <- which(M[ntrain + seq_along(valid)] == 1)
     bv[observed, s] <- bridge_predict(beta, V[ntrain + observed, , drop = FALSE], control)
@@ -275,7 +276,8 @@ bridge_nuisance_fit <- function(original, encoded, task, fold, measurement, heal
         candidate
       })
       inner_beta <- cmbridge::fit_bridge_ensemble(B[ti, , drop = FALSE], V[ti, , drop = FALSE], M[ti],
-                                                  library = inner_library, fold_id = nested, kernel = control$.cm_kernel)
+                                                  library = inner_library, fold_id = nested, kernel = control$.cm_kernel,
+                                                  project_psd = !identical(control$.cm_project_psd, FALSE))
       bt[vi, s] <- bridge_predict(inner_beta, V[vi, , drop = FALSE], control)
     }
     loading <- function(train, validation) {
@@ -291,7 +293,8 @@ bridge_nuisance_fit <- function(original, encoded, task, fold, measurement, heal
     }
     adjoint <- cmbridge::fit_adjoint_ensemble(B[seq_len(ntrain), , drop = FALSE], V[seq_len(ntrain), , drop = FALSE],
                                              M[seq_len(ntrain)], loading, library = adjoint_library,
-                                             fold_id = labels, kernel = control$.cm_kernel)
+                                             fold_id = labels, kernel = control$.cm_kernel,
+                                             project_psd = !identical(control$.cm_project_psd, FALSE))
     adjoint_fits[[s]] <- adjoint
     lv[, s] <- predict(adjoint, B[ntrain + seq_along(valid), , drop = FALSE])
   }
