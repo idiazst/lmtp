@@ -23,7 +23,7 @@ jobs:
         with:
           extra-packages: |
             any::rcmdcheck
-            github::idiazst/cmbridge@ed8e267855e12d9f32266c865e6b8707be550db0
+            github::idiazst/cmbridge@57b3ee2c2a9ead38d9a8b4c662ec2bc6900df2b1
           needs: check
       - name: Check lmtp package and integration tests
         shell: Rscript {0}
