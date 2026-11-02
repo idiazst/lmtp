@@ -180,3 +180,18 @@ test_that("baseline needs no continuation history", {
   model<-engine$model(1:120,0L)
   expect_true(all(is.finite(engine$predictions(model,121:160,1L)$d)))
 })
+
+test_that("alpha is evaluated on the no-visit history even for complete rows", {
+  set.seed(132);a<-fh_test_setup(fh_test_data(120));z<-a$z
+  z$rules$alpha[[2]]<-function(data,trt) {
+    expect_true(all(data$R2==0));expect_true(all(is.na(data$C2)))
+    expect_false(trt %in% names(data));rep(0,nrow(data))
+  }
+  z$rules$t[[2]]<-function(data,trt,epsilon) {
+    expect_true(all(data$R2==0));expect_true(all(is.na(data$C2)))
+    expect_true(all(data[[trt]]==0));as.numeric(epsilon<.35)
+  }
+  observed<-which(z$J[,2])
+  expect_equal(as.numeric(fh_policy(z,observed,2,'alpha')),rep(0,length(observed)))
+  expect_true(all(is.finite(fh_policy(z,observed,2,'t',rep(.2,length(observed))))))
+})

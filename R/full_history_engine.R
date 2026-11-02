@@ -3,7 +3,7 @@
 fh_engine <- function(z, root, root_labels, learners_y, learners_a, libraries,
                       bounds, control, estimator, nuisance_cache = NULL) {
   if (is.null(nuisance_cache)) nuisance_cache <- new.env(parent = emptyenv())
-  signature <- digest::digest(list(data = z$data[root, , drop = FALSE], id = z$id[root],
+  signature <- digest::digest(list(implementation = "1.6.0.9025", data = z$data[root, , drop = FALSE], id = z$id[root],
     rows = root, labels = root_labels, rules = lapply(z$rules, function(rules) lapply(rules, fh_function_key)), nodes = z$epsilon,
     randomizer = fh_function_key(z$randomizer), ratio_draws = z$ratio_draws, mtp = z$mtp,
     trt = z$trt, health = z$health, baseline = z$baseline, k = z$k,

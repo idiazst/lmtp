@@ -48,12 +48,15 @@ Each follow-up health vector must include its outcome.}
 
 \item{alpha}{Known no-visit treatment rule, function(data, trt), or a list
 of such functions, one per treatment time. It receives pre-treatment
-history with the current treatment columns removed.}
+history with the current treatment columns removed. When evaluating a
+continuation, current health is hidden and the current measurement
+indicator is set to zero, including on visit rows used for integration.}
 
 \item{d}{Visit-time policy, function(data, trt), or a list of such functions.}
 
 \item{t}{No-visit policy, function(data, trt, epsilon), or a list. The
-treatment columns supplied to this function already contain alpha(data,trt).
+treatment columns supplied to this function already contain alpha(data,trt),
+with current health hidden and the current measurement indicator set to zero.
 Each policy returns a numeric vector for scalar treatment, or a matrix or
 data.frame with one column per treatment component.}
 

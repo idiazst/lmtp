@@ -15,10 +15,13 @@
 #'   Each follow-up health vector must include its outcome.
 #' @param alpha Known no-visit treatment rule, function(data, trt), or a list
 #'   of such functions, one per treatment time. It receives pre-treatment
-#'   history with the current treatment columns removed.
+#'   history with the current treatment columns removed. When evaluating a
+#'   continuation, current health is hidden and the current measurement
+#'   indicator is set to zero, including on visit rows used for integration.
 #' @param d Visit-time policy, function(data, trt), or a list of such functions.
 #' @param t No-visit policy, function(data, trt, epsilon), or a list. The
-#'   treatment columns supplied to this function already contain alpha(data,trt).
+#'   treatment columns supplied to this function already contain alpha(data,trt),
+#'   with current health hidden and the current measurement indicator set to zero.
 #'   Each policy returns a numeric vector for scalar treatment, or a matrix or
 #'   data.frame with one column per treatment component.
 #' @param epsilon Equal-weight integration nodes for the known randomizer law,
@@ -254,6 +257,10 @@ fh_policy <- function(z, rows, s, branch, epsilon = NULL) {
   columns <- unique(c(z$baseline, unlist(z$health[first:s]),
     unlist(z$trt[first:s]), z$measurement[first:s]))
   data <- z$data[rows, columns, drop = FALSE]; a <- z$trt[[s]]
+  if (branch %in% c("alpha", "t") && s > 1L) {
+    data[, z$health[[s]]] <- NA_real_
+    data[[z$measurement[s]]] <- 0
+  }
   if (branch == "alpha") data <- data[, setdiff(names(data), a), drop = FALSE]
   if (branch == "t") data[, a] <- fh_policy(z, rows, s, "alpha")
   args <- list(data, a)
