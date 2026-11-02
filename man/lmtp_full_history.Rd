@@ -28,7 +28,8 @@ lmtp_full_history(
   adjoint_library = NULL,
   bounds = c(-100, 100),
   control = lmtp_control(),
-  id = NULL
+  id = NULL,
+  nuisance_cache = NULL
 )
 }
 \arguments{
@@ -46,7 +47,8 @@ Corresponding components must have the same interpretation across times.
 Each follow-up health vector must include its outcome.}
 
 \item{alpha}{Known no-visit treatment rule, function(data, trt), or a list
-of such functions, one per treatment time.}
+of such functions, one per treatment time. It receives pre-treatment
+history with the current treatment columns removed.}
 
 \item{d}{Visit-time policy, function(data, trt), or a list of such functions.}
 
@@ -94,6 +96,10 @@ including zero. Values outside it cause an error, never silent clipping.}
 calibrated on training predictions only; use .trim=1 to disable it.}
 
 \item{id}{Optional cluster ID column.}
+
+\item{nuisance_cache}{Optional environment shared by SDR/TMLE calls with the
+same data, policies and splits. Only identical training problems are reused;
+altered training data or tuning specifications create separate cache entries.}
 }
 \value{
 An lmtp_curve with estimates, combined influence functions, separate

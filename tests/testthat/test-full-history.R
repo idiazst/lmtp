@@ -101,3 +101,82 @@ test_that("fully measured identity policy reduces to empirical means", {
   expect_error(lmtp_full_history(x,c("A1","A2"),c("C2","C3"),c("R1","R2","R3"),
     list("C1","C2","C3"),a$alpha,identity,a$t,folds=1),"two outer folds")
 })
+
+test_that("SDR and TMLE reuse identical training fits and invalidate changed data", {
+  set.seed(128);a<-fh_test_setup(fh_test_data(240));z<-a$z;root<-1:180
+  cache<-new.env(parent=emptyenv());libraries<-fh_libraries(a$lib,NULL)
+  engine<-function(z,method) fh_engine(z,root,NULL,'SL.mean','SL.mean',libraries,
+    c(-100,100),a$control,method,cache)
+  one<-engine(z,'sdr');before<-one$nuisance(root,181:240)
+  expect_length(ls(cache),1L)
+  saved<-one$counts()
+  two<-engine(z,'tmle');after<-two$nuisance(root,181:240)
+  expect_length(ls(cache),1L)
+  expect_identical(before,after)
+  expect_equal(saved,two$counts())
+  z$data$C3[181:240]<-1-z$data$C3[181:240]
+  three<-engine(z,'sdr');expect_length(ls(cache),1L)
+  updated<-three$nuisance(root,181:240)
+  expect_identical(updated$fits,before$fits)
+  expect_gt(max(abs(updated$beta-before$beta)),0)
+  z$data$C3[1:180]<-1-z$data$C3[1:180]
+  four<-engine(z,'sdr');expect_length(ls(cache),2L)
+})
+
+test_that("alpha cannot use current treatment as a circular continuation rule", {
+  set.seed(129);a<-fh_test_setup(fh_test_data(80))
+  a$z$rules$alpha[[2]]<-function(data,trt) {
+    expect_false(trt %in% names(data));rep(0,nrow(data))
+  }
+  expect_equal(as.numeric(fh_policy(a$z,1:20,2,'alpha')),rep(0,20))
+})
+
+test_that("three-time multivariate policies retain cluster splits and finite memory", {
+  set.seed(130);n<-160
+  data<-data.frame(cluster=rep(seq_len(n/2),each=2))
+  for(s in 1:4) {
+    data[[paste0('C',s)]]<-rbinom(n,1,.5)
+    data[[paste0('X',s)]]<-rnorm(n)
+    data[[paste0('R',s)]]<-1
+    if(s<4) {
+      data[[paste0('A',s)]]<-rbinom(n,1,.5)
+      data[[paste0('B',s)]]<-rbinom(n,1,.5)
+    }
+  }
+  trt<-lapply(1:3,function(s) paste0(c('A','B'),s))
+  health<-lapply(1:4,function(s) paste0(c('C','X'),s))
+  identity<-function(data,trt) data[,trt,drop=FALSE]
+  alpha<-function(data,trt) matrix(0,nrow(data),length(trt))
+  continuation<-function(data,trt,epsilon) cbind(as.numeric(epsilon<.5),as.numeric(epsilon>=.5))
+  control<-lmtp_control(.trim=1,.learners_trt_folds=2,.learners_outcome_folds=2)
+  for(k in c(2,Inf)) {
+    fit<-lmtp_full_history(data,trt,paste0('C',2:4),paste0('R',1:4),health,
+      alpha,identity,continuation,k=k,id='cluster',folds=2,learners_outcome='SL.mean',
+      learners_trt='SL.mean',control=control,ratio_draws=1)
+    expect_equal(fit$unprojected_estimates,unname(colMeans(data[paste0('C',2:4)])),tolerance=1e-10)
+    for(fold in fit$folds) expect_false(any(data$cluster[fold$training_set]%in%data$cluster[fold$validation_set]))
+    expect_equal(dim(fit$influence_functions),c(n,3L))
+  }
+})
+
+test_that("scarce descendant histories retain the failed pilot seed", {
+  example<-readRDS(testthat::test_path('fixtures','full-history-scarce-seed.rds'))
+  a<-fh_test_setup(example$data)
+  control<-lmtp_control(.trim=1,.learners_outcome_folds=3,.learners_trt_folds=3,.discrete=FALSE)
+  set.seed(example$seed+2L)
+  fit<-lmtp_full_history(example$data,c('A1','A2'),c('C2','C3'),c('R1','R2','R3'),
+    list('C1','C2','C3'),a$alpha,a$d,a$t,mtp=FALSE,k=1,folds=example$folds,
+    learners_outcome='SL.saturated_l1',learners_trt='SL.saturated_l1',
+    bridge_library=a$lib,control=control)
+  expect_true(all(is.finite(fit$influence_functions)))
+  expect_true(all(is.finite(fit$unprojected_estimates)))
+})
+
+test_that("baseline needs no continuation history", {
+  set.seed(131);a<-fh_test_setup(fh_test_data(160));z<-a$z
+  z$rules$alpha[[1]]<-z$rules$t[[1]]<-function(...) stop('No prescription before baseline.')
+  engine<-fh_engine(z,1:120,NULL,'SL.mean','SL.mean',fh_libraries(a$lib,NULL),
+    c(-100,100),a$control,'sdr')
+  model<-engine$model(1:120,0L)
+  expect_true(all(is.finite(engine$predictions(model,121:160,1L)$d)))
+})

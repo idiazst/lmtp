@@ -1,6 +1,6 @@
 Package: lmtp
 Title: Non-Parametric Causal Effects of Feasible Interventions Based on Modified Treatment Policies
-Version: 1.6.0.9023
+Version: 1.6.0.9024
 Authors@R: 
     c(person(given = "Nicholas",
              family = "Williams",
@@ -31,6 +31,7 @@ LazyData: true
 Roxygen: list(markdown = TRUE)
 Imports: 
     stats,
+    codetools,
     cli,
     R6,
     generics,

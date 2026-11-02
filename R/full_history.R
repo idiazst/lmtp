@@ -14,7 +14,8 @@
 #'   Corresponding components must have the same interpretation across times.
 #'   Each follow-up health vector must include its outcome.
 #' @param alpha Known no-visit treatment rule, function(data, trt), or a list
-#'   of such functions, one per treatment time.
+#'   of such functions, one per treatment time. It receives pre-treatment
+#'   history with the current treatment columns removed.
 #' @param d Visit-time policy, function(data, trt), or a list of such functions.
 #' @param t No-visit policy, function(data, trt, epsilon), or a list. The
 #'   treatment columns supplied to this function already contain alpha(data,trt).
@@ -46,6 +47,9 @@
 #' @param control Controls from [lmtp_control()]. Density-ratio trimming is
 #'   calibrated on training predictions only; use .trim=1 to disable it.
 #' @param id Optional cluster ID column.
+#' @param nuisance_cache Optional environment shared by SDR/TMLE calls with the
+#'   same data, policies and splits. Only identical training problems are reused;
+#'   altered training data or tuning specifications create separate cache entries.
 #' @return An lmtp_curve with estimates, combined influence functions, separate
 #'   sequential and bridge components, propagation weights and nuisance fits.
 #' @export
@@ -59,8 +63,11 @@ lmtp_full_history <- function(data, trt, outcome, measurement, health,
                               learners_outcome = c("SL.saturated_l1_cv", "SL.mean"),
                               learners_trt = learners_outcome,
                               bridge_library = NULL, adjoint_library = NULL,
-                              bounds = c(-100, 100), control = lmtp_control(), id = NULL) {
+                              bounds = c(-100, 100), control = lmtp_control(), id = NULL,
+                              nuisance_cache = NULL) {
   estimator <- match.arg(estimator)
+  if (is.null(nuisance_cache)) nuisance_cache <- new.env(parent = emptyenv())
+  if (!is.environment(nuisance_cache)) stop("nuisance_cache must be an environment.")
   z <- fh_setup(data, trt, outcome, measurement, health, baseline, k, alpha, d, t, epsilon, id)
   if (!is.function(randomizer) || length(ratio_draws) != 1L || !is.finite(ratio_draws) ||
       ratio_draws < 1L || ratio_draws != as.integer(ratio_draws))
@@ -79,14 +86,16 @@ lmtp_full_history <- function(data, trt, outcome, measurement, health,
   learner_folds <- validate_learner_folds(learner_folds, folds, z$id)
   libraries <- fh_libraries(bridge_library, adjoint_library)
   seq_score <- br_score <- omega <- matrix(0, z$n, z$tau)
+  ratios_d <- ratios_t <- bridge_values <- matrix(NA_real_, z$n, z$tau)
   fits <- targeting <- vector("list", length(folds))
   for (j in seq_along(folds)) {
     train <- folds[[j]]$training_set; valid <- folds[[j]]$validation_set
     labels <- if (is.null(learner_folds)) NULL else learner_folds[[j]]
     engine <- fh_engine(z, train, labels, learners_outcome, learners_trt,
-                        libraries, bounds, control, estimator)
+                        libraries, bounds, control, estimator, nuisance_cache)
     nu <- engine$nuisance(train, valid)
     omega[valid, ] <- nu$omega
+    ratios_d[valid, ] <- nu$d; ratios_t[valid, ] <- nu$t; bridge_values[valid, ] <- nu$beta
     models <- lapply(0:(z$tau - 1L), function(depth) engine$model(train, depth))
     predictions <- lapply(seq_len(z$tau), function(h) lapply(seq_len(h), function(s)
       engine$predictions(models[[h - s + 1L]], valid, s)))
@@ -156,6 +165,7 @@ lmtp_full_history <- function(data, trt, outcome, measurement, health,
     unprojected_estimates = points, sequential_estimates = colMeans(seq_score),
     sequential_score = gradients - br_score, bridge_correction = br_score,
     influence_functions = sweep(gradients, 2L, points), propagation_weights = omega,
+    density_ratios_d = ratios_d, density_ratios_t = ratios_t, bridge_values = bridge_values,
     bridge_fits = fits, targeting = targeting, measurement = measurement, k = k,
     integration_nodes = z$epsilon)
   class(out) <- "lmtp_curve"
@@ -244,6 +254,7 @@ fh_policy <- function(z, rows, s, branch, epsilon = NULL) {
   columns <- unique(c(z$baseline, unlist(z$health[first:s]),
     unlist(z$trt[first:s]), z$measurement[first:s]))
   data <- z$data[rows, columns, drop = FALSE]; a <- z$trt[[s]]
+  if (branch == "alpha") data <- data[, setdiff(names(data), a), drop = FALSE]
   if (branch == "t") data[, a] <- fh_policy(z, rows, s, "alpha")
   args <- list(data, a)
   if (branch == "t") args$epsilon <- epsilon

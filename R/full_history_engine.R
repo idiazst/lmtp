@@ -1,11 +1,28 @@
 # Every cache key includes the complete training row set. Descendant responses
 # are rebuilt inside each learner CV split, including penalty selection.
 fh_engine <- function(z, root, root_labels, learners_y, learners_a, libraries,
-                      bounds, control, estimator) {
-  cache <- new.env(parent = emptyenv())
+                      bounds, control, estimator, nuisance_cache = NULL) {
+  if (is.null(nuisance_cache)) nuisance_cache <- new.env(parent = emptyenv())
+  signature <- digest::digest(list(data = z$data[root, , drop = FALSE], id = z$id[root],
+    rows = root, labels = root_labels, rules = lapply(z$rules, function(rules) lapply(rules, fh_function_key)), nodes = z$epsilon,
+    randomizer = fh_function_key(z$randomizer), ratio_draws = z$ratio_draws, mtp = z$mtp,
+    trt = z$trt, health = z$health, baseline = z$baseline, k = z$k,
+    libraries = libraries, learners_y = learners_y, learners_a = learners_a,
+    bounds = bounds, control = control))
+  if (!exists(signature, nuisance_cache, inherits = FALSE))
+    assign(signature, new.env(parent = emptyenv()), nuisance_cache)
+  cache <- get(signature, nuisance_cache, inherits = FALSE)
   split_cache <- new.env(parent = emptyenv())
   key <- function(rows, suffix) paste0(suffix, "_", digest::digest(sort(rows)))
   remember <- function(rows, suffix, fit) {
+    # Depth-zero regressions and adjoints using only those regressions are
+    # identical for SDR and TMLE. Deeper augmented responses are method-specific.
+    if (grepl("^model[1-9]", suffix)) suffix <- paste0(suffix, ":", estimator)
+    if (grepl("^adjoint", suffix)) {
+      at <- as.integer(sub("adjoint([0-9]+)h.*", "\\1", suffix))
+      horizon <- as.integer(sub(".*h([0-9]+)", "\\1", suffix))
+      if (horizon - at > 1L) suffix <- paste0(suffix, ":", estimator)
+    }
     name <- key(rows, suffix)
     if (!exists(name, cache, inherits = FALSE)) assign(name, fit(), cache)
     get(name, cache, inherits = FALSE)
@@ -14,11 +31,18 @@ fh_engine <- function(z, root, root_labels, learners_y, learners_a, libraries,
     name <- key(rows, "split")
     if (!exists(name, split_cache, inherits = FALSE)) {
       ids <- as.character(z$id[rows]); people <- sort(unique(ids))
+      first <- match(people, ids)
       if (length(people) < 4L) stop("Nested fitting requires at least four training clusters.")
       if (!is.null(root_labels) && identical(rows, root)) assigned <- root_labels else {
-        V <- if (identical(rows, root)) max(2L, min(3L,
-          control$.learners_outcome_folds, control$.learners_trt_folds)) else 2L
-        first <- match(people, ids)
+        root_groups <- if (is.null(root_labels)) max(c(2L,
+          control$.learners_outcome_folds, control$.learners_trt_folds)) else length(unique(root_labels))
+        complete <- z$J[rows[first], , drop = FALSE] *
+          as.matrix(z$data[rows[first], z$measurement[-1L], drop = FALSE])
+        scarce <- min(colSums(complete)) <= 32L
+        # Preserve measured training clusters in deep descendants, matching
+        # the observed-history estimator's economical 2/3-group rule.
+        V <- if (identical(rows, root)) root_groups else if (root_groups >= 3L && scarce) 3L else 2L
+        if (V > length(people)) stop("Inner CV folds exceed the number of training clusters.")
         profile <- apply(cbind(z$J[rows[first], , drop = FALSE],
           z$data[rows[first], z$measurement, drop = FALSE]), 1, paste, collapse = "|")
         person_labels <- integer(length(people)); offset <- 0L
@@ -71,6 +95,7 @@ fh_engine <- function(z, root, root_labels, learners_y, learners_a, libraries,
   ratio_fit <- function(train, s, branch) remember(train, paste0("ratio", s, branch), function() {
     eligible <- train[z$J[train, s]]
     natural <- fh_design(z, eligible, s)
+    if (!control$.ratio_history) natural <- natural[, grepl("^trt[0-9]+$", names(natural)), drop = FALSE]
     natural$..fh_id <- z$id[eligible]; natural$..fh_y <- 0
     if (branch == "d") {
       shifted <- fh_design(z, eligible, s, fh_policy(z, eligible, s, "d"))
@@ -84,6 +109,7 @@ fh_engine <- function(z, root, root_labels, learners_y, learners_a, libraries,
         fh_design(z, eligible, s, fh_policy(z, eligible, s, "t", draws))
       }))
     }
+    if (!control$.ratio_history) shifted <- shifted[, grepl("^trt[0-9]+$", names(shifted)), drop = FALSE]
     shifted$..fh_id <- rep(z$id[eligible], multiplier); shifted$..fh_y <- 1
     stacked <- rbind(natural, shifted)
     labels <- split_rows(train)[match(stacked$..fh_id, z$id[train])]
@@ -139,6 +165,7 @@ fh_engine <- function(z, root, root_labels, learners_y, learners_a, libraries,
     if (!length(ii)) return(out)
     out$natural[ii] <- predict(fit, fh_design(z, active, s), tol = NULL)
     out$d[ii] <- predict(fit, fh_design(z, active, s, fh_policy(z, active, s, "d")), tol = NULL)
+    if (s == 1L) return(out) # R1 is known to be one; no baseline continuation branch.
     for (j in seq_along(z$epsilon[[s]])) out$t_nodes[ii, j] <- predict(fit,
       fh_design(z, active, s, fh_policy(z, active, s, "t", rep(z$epsilon[[s]][j], length(ii)))), tol = NULL)
     out$t <- rowMeans(out$t_nodes)
@@ -169,14 +196,13 @@ fh_engine <- function(z, root, root_labels, learners_y, learners_a, libraries,
     times <- seq_len(z$tau - depth)
     designs <- lapply(times, function(s) {
       rows <- train[z$J[train, s]]
-      x <- fh_design(z, rows, s); x$..fh_id <- z$id[rows]; x$..fh_y <- 0
+      x <- fh_design(z, rows, s); x$..fh_y <- 0
       x
     })
     data <- do.call(rbind, designs)
     # Internal row keys, rather than cluster IDs, locate responses for repeated
     # observations. The learner ID remains the user's cluster identifier.
     data$..fh_row <- unlist(lapply(times, function(s) train[z$J[train, s]]))
-    data$..fh_id <- as.character(z$id[data$..fh_row])
     # run_ensemble forwards IDs and times to response_fit. A unique row key is
     # safe only when every ID has one row; for clusters use a compound key and
     # preserve their shared folds via the explicit labels below.
@@ -258,4 +284,26 @@ fh_engine <- function(z, root, root_labels, learners_y, learners_a, libraries,
   list(model = model, nuisance = nuisance, predictions = predictions,
        terminal = terminal, response = response, adjoint = adjoint,
        splits = split_rows, counts = function() table(sub("_.*", "", ls(cache))))
+}
+
+# Hash the bindings actually referenced by a callback. Serializing its entire
+# enclosing call frame can capture the mutable cache itself, defeating reuse
+# and making signatures depend on unrelated validation observations.
+fh_function_key <- function(fun, seen = character()) {
+  result <- list(formals = formals(fun), body = body(fun))
+  globals <- codetools::findGlobals(fun, merge = FALSE)
+  names <- unique(c(globals$variables, globals$functions))
+  env <- environment(fun)
+  values <- list()
+  for (name in setdiff(names, seen)) {
+    if (!exists(name, env, inherits = TRUE)) next
+    value <- get(name, env, inherits = TRUE)
+    if (is.function(value)) {
+      parent <- environment(value)
+      if (is.primitive(value) || identical(parent, baseenv()) || isNamespace(parent)) next
+      values[[name]] <- fh_function_key(value, c(seen, name))
+    } else values[[name]] <- value
+  }
+  result$bindings <- values
+  result
 }
