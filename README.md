@@ -11,6 +11,13 @@ name remains **lmtp**. It includes Herb Susmann's pooled-curve implementation,
 the previously ported upstream repairs, pooled SDR and logistic TMLE,
 and the observed-history self-censoring estimator `lmtp_bridge()`.
 
+Install the full-history development versions with:
+
+```r
+remotes::install_github("idiazst/cmbridge@full-history-performance")
+remotes::install_github("idiazst/lmtp@full-history-adjustment")
+```
+
 Full-history adjustment is available through `lmtp_full_history()`. It accepts
 separate `alpha`, `d`, and `t` functions: known treatment at no-visit times,
 the visit policy, and the randomized no-visit policy. It rebuilds a pseudo-outcome
