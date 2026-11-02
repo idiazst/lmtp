@@ -11,6 +11,47 @@ name remains **lmtp**. It includes Herb Susmann's pooled-curve implementation,
 the previously ported upstream repairs, pooled SDR and logistic TMLE,
 and the observed-history self-censoring estimator `lmtp_bridge()`.
 
+Install the full-history development versions with:
+
+```r
+remotes::install_github("idiazst/cmbridge@full-history-performance")
+remotes::install_github("idiazst/lmtp@full-history-adjustment")
+```
+
+Full-history adjustment is available through `lmtp_full_history()`. It accepts
+separate `alpha`, `d`, and `t` functions: known treatment at no-visit times,
+the visit policy, and the randomized no-visit policy. It rebuilds a pseudo-outcome
+at every time, estimates both policy ratios by classification, and adds a
+horizon-specific adjoint correction for every bridge in the recursion.
+
+```r
+fit <- lmtp_full_history(
+  data, trt = c("A1", "A2"), outcome = c("C2", "C3"),
+  measurement = c("R1", "R2", "R3"),
+  health = list("C1", "C2", "C3"),
+  alpha = function(data, trt) rep(0, nrow(data)),
+  d = function(data, trt) rep(1, nrow(data)),
+  t = function(data, trt, epsilon) as.numeric(epsilon < .35),
+  mtp = FALSE, k = 1, estimator = "tmle", folds = 3
+)
+tidy(fit)
+```
+
+Baseline health must be fully observed. `health` and `measurement` include
+baseline; `outcome` and `trt` begin with the first treatment transition.
+The `t` callback receives treatment already set to `alpha`; it cannot read
+future outcomes or latent unrecorded health. `randomizer(n, time)` draws from
+the known continuation randomizer law for classification. `epsilon` contains
+matching quadrature nodes for regression integration; increase their number
+when checking integration accuracy. No-visit treatment is checked against
+`alpha` before fitting. Retained states use `k` health times and their
+intervening treatments. The bridge library should use inverse-logit links
+so fitted inverse probabilities are at least one; raw fits are never clipped.
+
+The full-history study is kept separately in
+[`lmtp_selfcensor_sim/studies/full-history`](https://github.com/idiazst/lmtp_selfcensor_sim/tree/full-history-adjustment/studies/full-history).
+
+
 `lmtp_bridge()` constructs or accepts the outer splits, then passes the same
 training-person splits to SuperLearner, cmbridge and penalty selection. Both
 sequential estimators receive the one-step bridge/adjoint correction.
